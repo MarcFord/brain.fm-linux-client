@@ -228,7 +228,7 @@ async fn browser_handoff(bfm: &BrainFM1Proxy<'_>) -> Result<()> {
     println!("Opened {URL} — sign in with whichever provider your account uses.");
     println!();
     println!("Then, in that tab, open DevTools (F12) and run:");
-    println!("    JSON.parse(localStorage['persist:auth']).token");
+    println!("    JSON.parse(JSON.parse(localStorage['persist:auth']).token)");
     println!();
     println!("Paste the value here (it will not be echoed).");
 

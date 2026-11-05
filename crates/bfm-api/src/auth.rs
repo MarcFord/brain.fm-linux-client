@@ -22,8 +22,14 @@ pub struct Claims {
     /// Brain.fm user id — a 21-character nanoid, not a Mongo ObjectId.
     #[serde(rename = "_id")]
     pub id: String,
-    pub iat: i64,
-    pub exp: i64,
+    /// Seconds since the epoch — **may be fractional, per field**.
+    ///
+    /// Observed in a single live token: `"iat": 1793917618` (integer) and
+    /// `"exp": 1793918518.095` (float). The two claims disagree on type
+    /// within the same payload, so neither can be an `i64` — that rejects
+    /// every real session. `f64` accepts both forms.
+    pub iat: f64,
+    pub exp: f64,
 }
 
 /// A session token plus its decoded claims.
@@ -64,7 +70,7 @@ impl SessionToken {
 
     /// Observed TTL is exactly 15 minutes.
     pub fn lifetime(&self) -> Duration {
-        Duration::from_secs((self.claims.exp - self.claims.iat).max(0) as u64)
+        Duration::from_secs_f64((self.claims.exp - self.claims.iat).max(0.0))
     }
 
     pub fn is_expired(&self) -> bool {
@@ -72,7 +78,10 @@ impl SessionToken {
     }
 
     pub fn expired_at(&self, now: SystemTime) -> bool {
-        let secs = now.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
+        let secs = now
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs_f64();
         secs >= self.claims.exp
     }
 }
@@ -148,6 +157,32 @@ mod tests {
         let s = format!("{t:?}");
         assert!(s.contains("<redacted>"));
         assert!(!s.contains("c2lnbmF0dXJl"));
+    }
+
+    /// Regression: a real token's `exp` carries fractional milliseconds.
+    /// Declaring these as integers rejected every genuine Brain.fm session.
+    #[test]
+    fn decodes_fractional_timestamps() {
+        let b64 = |s: &str| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(s);
+        let raw = format!(
+            "{}.{}.{}",
+            b64(r#"{"alg":"RS256","typ":"JWT"}"#),
+            b64(r#"{"_id":"PLACEHOLDERUSERID0001","iat":1793917618.095,"exp":1793918518.095}"#),
+            "c2ln"
+        );
+        let t = SessionToken::parse(raw).expect("fractional claims must decode");
+        assert_eq!(t.user_id(), "PLACEHOLDERUSERID0001");
+        assert_eq!(
+            t.lifetime(),
+            Duration::from_secs(900),
+            "still a 15 minute TTL"
+        );
+    }
+
+    #[test]
+    fn integer_timestamps_still_decode() {
+        let t = SessionToken::parse(token_with("u", 1000, 1900)).unwrap();
+        assert_eq!(t.lifetime(), Duration::from_secs(900));
     }
 
     #[test]

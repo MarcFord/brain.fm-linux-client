@@ -31,6 +31,7 @@ pub struct TrackInfo {
     pub image_url: String,
     /// Local cache path, empty when there is no art or the fetch failed.
     pub art_path: String,
+    pub is_favorite: bool,
 }
 
 /// Runtime state behind the interface.
@@ -43,6 +44,9 @@ pub struct BrainFm {
     pub track: Option<TrackInfo>,
     /// Seconds into the current track, fed by the audio engine.
     pub position: u64,
+    /// Track ids the user has favourited, so the heart renders filled
+    /// without a round trip per track.
+    favorites: std::collections::HashSet<String>,
     /// Remaining tracks for this session.
     ///
     /// `POST /sessions` hands over the whole run at once (40 observed), so
@@ -80,6 +84,7 @@ impl BrainFm {
             track: None,
             position: 0,
             queue: VecDeque::new(),
+            favorites: std::collections::HashSet::new(),
             hooks: Hooks::load(),
             api,
             store,
@@ -209,6 +214,9 @@ impl BrainFm {
             self.timer = Some(Timer::start(spec));
         }
 
+        if self.favorites.is_empty() {
+            self.refresh_favorites().await;
+        }
         let activity_id = self.resolve_activity(state, activity).await?;
         let mut req = SessionRequest::new(activity_id.clone(), effect);
         if !genres.is_empty() {
@@ -258,6 +266,7 @@ impl BrainFm {
             neural_effect: serving.track_variation.neural_effect_level.unwrap_or(0.0),
             image_url,
             art_path,
+            is_favorite: self.favorites.contains(&serving.track.id),
         });
         let _ = self.state_changed(&emitter).await;
         let _ = self.mental_state_changed(&emitter).await;
@@ -363,6 +372,7 @@ impl BrainFm {
             neural_effect: serving.track_variation.neural_effect_level.unwrap_or(0.0),
             image_url,
             art_path,
+            is_favorite: self.favorites.contains(&serving.track.id),
         });
         self.position = 0;
 
@@ -413,6 +423,54 @@ impl BrainFm {
         let mut all = g.base_genre_names;
         all.extend(g.nature_genre_names);
         Ok(all)
+    }
+
+    /// Favourite or un-favourite a track. Interface version 4.
+    pub async fn favorite(
+        &mut self,
+        track_id: &str,
+        on: bool,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+    ) -> zbus::fdo::Result<()> {
+        self.require_auth()?;
+        let id = self.resolve_track_id(track_id)?;
+
+        let rot = self.api.set_favorite(&id, on).await.map_err(api_error)?;
+        self.persist_rotation(&rot);
+
+        if on {
+            self.favorites.insert(id.clone());
+        } else {
+            self.favorites.remove(&id);
+        }
+        if let Some(t) = self.track.as_mut()
+            && t.id == id
+        {
+            t.is_favorite = on;
+            let _ = self.track_changed(&emitter).await;
+        }
+        Ok(())
+    }
+
+    /// Dislike a track and move on from it. Interface version 4.
+    pub async fn dislike(
+        &mut self,
+        track_id: &str,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+    ) -> zbus::fdo::Result<()> {
+        self.require_auth()?;
+        let id = self.resolve_track_id(track_id)?;
+
+        let rot = self.api.dislike(&id).await.map_err(api_error)?;
+        self.persist_rotation(&rot);
+
+        // Disliking what you are listening to should stop you listening to
+        // it; staying on the track would be a strange way to honour it.
+        let playing_it = self.track.as_ref().is_some_and(|t| t.id == id);
+        if playing_it && self.playback != "idle" {
+            self.skip_track(emitter).await?;
+        }
+        Ok(())
     }
 
     /// Durations the service suggests for this state. Interface version 2.
@@ -518,6 +576,7 @@ impl BrainFm {
         put("name", Variant::from(t.name.clone()));
         put("length", Variant::from(t.length));
         put("neural_effect", Variant::from(t.neural_effect));
+        put("is_favorite", Variant::from(t.is_favorite));
         put("image_url", Variant::from(t.image_url.clone()));
         put("art_path", Variant::from(t.art_path.clone()));
         m
@@ -604,6 +663,33 @@ impl BrainFm {
 
     /// Resolve an activity argument to an id: empty means the state's
     /// default, otherwise match on id or display name.
+    /// An empty id means "whatever is playing", which is what every caller
+    /// actually wants from a button on the player.
+    fn resolve_track_id(&self, track_id: &str) -> zbus::fdo::Result<String> {
+        if !track_id.trim().is_empty() {
+            return Ok(track_id.to_owned());
+        }
+        self.track
+            .as_ref()
+            .map(|t| t.id.clone())
+            .ok_or_else(|| zbus::fdo::Error::Failed("no track is playing".into()))
+    }
+
+    /// Refresh the set of favourited tracks.
+    ///
+    /// Best effort: a failure here costs a correctly-filled heart, not
+    /// playback, so it must never surface as an error.
+    async fn refresh_favorites(&mut self) {
+        match self.api.favorites().await {
+            Ok((servings, rot)) => {
+                self.persist_rotation(&rot);
+                self.favorites = servings.into_iter().map(|s| s.track.id).collect();
+                tracing::debug!(count = self.favorites.len(), "favourites refreshed");
+            }
+            Err(e) => tracing::debug!(error = %e, "could not refresh favourites"),
+        }
+    }
+
     /// Fail fast when there is no session, rather than sending an
     /// unauthenticated request and reading the rejection back.
     fn require_auth(&self) -> zbus::fdo::Result<()> {

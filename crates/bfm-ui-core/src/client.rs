@@ -32,6 +32,10 @@ pub enum Command {
     Resume,
     Skip,
     Stop,
+    /// Favourite or un-favourite the current track.
+    Favorite(bool),
+    /// Dislike the current track; the daemon also moves on from it.
+    Dislike,
     SetTimer(String),
     SetVolume(f64),
     LoginFromBrowserToken(String),
@@ -206,6 +210,9 @@ async fn apply(bfm: &BrainFM1Proxy<'_>, cmd: Command) -> zbus::Result<()> {
         Command::Pause => bfm.pause().await?,
         Command::Resume => bfm.resume().await?,
         Command::Skip => bfm.skip_track().await?,
+        // Empty id means "whatever is playing".
+        Command::Favorite(on) => bfm.favorite("", on).await?,
+        Command::Dislike => bfm.dislike("").await?,
         Command::Stop => bfm.stop_session().await?,
         Command::SetTimer(spec) => bfm.set_timer(&spec).await?,
         Command::SetVolume(v) => bfm.set_volume(v).await?,

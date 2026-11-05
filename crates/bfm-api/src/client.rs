@@ -255,6 +255,61 @@ impl Client {
         Ok((session.servings, rotation))
     }
 
+    // ---- reactions ----
+
+    /// Favourite or un-favourite a track.
+    ///
+    /// The id travels in the path and there is no body; POST adds, DELETE
+    /// removes. *(Path and verbs read from the web bundle; not exercised
+    /// against the live API, because doing so changes real account data.)*
+    pub async fn set_favorite(&self, track_id: &str, on: bool) -> Result<TokenRotation> {
+        let uid = self.user_id()?;
+        let url = format!("{}/users/{uid}/tracks/{track_id}/favorites", self.v3);
+        let req = if on {
+            self.http.post(url)
+        } else {
+            self.http.delete(url)
+        };
+        let (_, rotation): (serde_json::Value, _) = self.send(req, "favorites").await?;
+        Ok(rotation)
+    }
+
+    /// Which tracks the user has favourited.
+    pub async fn favorites(&self) -> Result<(Vec<Serving>, TokenRotation)> {
+        let uid = self.user_id()?;
+        self.send(
+            self.http
+                .get(format!("{}/users/{uid}/servings/favorites", self.v3))
+                .query(&[("version", "2")]),
+            "favorites-list",
+        )
+        .await
+    }
+
+    /// Dislike a track, so it stops being served.
+    ///
+    /// Unlike favourites this carries a body, and it lives on `/v2`.
+    /// *(Shape read from the web bundle; unverified for the same reason.)*
+    pub async fn dislike(&self, track_id: &str) -> Result<TokenRotation> {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Body<'a> {
+            track_id: &'a str,
+        }
+
+        let uid = self.user_id()?;
+        let (_, rotation): (serde_json::Value, _) = self
+            .send(
+                self.http
+                    .post(format!("{}/users/{uid}/dislikes", self.v2))
+                    .query(&[("version", "3")])
+                    .json(&Body { track_id }),
+                "dislikes",
+            )
+            .await?;
+        Ok(rotation)
+    }
+
     // ---- account ----
 
     pub async fn me(&self) -> Result<(serde_json::Value, TokenRotation)> {

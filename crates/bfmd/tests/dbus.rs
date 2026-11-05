@@ -428,3 +428,41 @@ async fn session_lengths_exist_at_interface_version_2() {
         "expected needs-login, got: {err}"
     );
 }
+
+/// Version 4 added reactions.
+#[tokio::test]
+async fn reactions_exist_at_interface_version_4() {
+    let (conn, name) = bus_or_skip!("reactions");
+    let p = proxy(&conn, &name).await;
+
+    assert!(p.interface_version().await.unwrap() >= 4);
+
+    // Unauthenticated, so they must refuse before touching the network —
+    // refusing proves the methods are served.
+    for err in [
+        p.favorite("trk", true).await.unwrap_err(),
+        p.dislike("trk").await.unwrap_err(),
+    ] {
+        assert!(
+            err.to_string().contains(bfm_proto::error_code::NEEDS_LOGIN),
+            "expected needs-login before any network call, got: {err}"
+        );
+    }
+}
+
+/// An empty id means "whatever is playing". With nothing playing that is a
+/// plain failure, not a panic and not a request for track "".
+#[tokio::test]
+async fn an_empty_track_id_with_nothing_playing_is_refused() {
+    let (conn, name) = bus_or_skip!("emptytrack");
+    let p = proxy(&conn, &name).await;
+    p.login(bfm_proto::auth_method::TOKEN, "", &adoptable_token())
+        .await
+        .unwrap();
+
+    let err = p.favorite("", true).await.unwrap_err();
+    assert!(
+        err.to_string().contains("no track"),
+        "expected a clear 'no track is playing', got: {err}"
+    );
+}

@@ -18,4 +18,4 @@ pub use browser::{Found, find_session};
 pub use client::{Client, Command, Update, needs_login, split_error};
 pub use filters::{Catalog, Effort, Filters};
 pub use mode::{SessionLength, SessionMode, fallback_lengths};
-pub use state::{IDLE_LABEL, Playback, State, Timer, Track, format_duration};
+pub use state::{IDLE_LABEL, Playback, State, Timer, Track, format_duration, share_text};

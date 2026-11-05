@@ -476,3 +476,80 @@ async fn existing_token_is_adopted_without_a_request() {
         "adopting a browser session must not call the API"
     );
 }
+
+// ---------------------------------------------------------------- reactions
+
+/// Favouriting carries the id in the path and no body; the verb is the
+/// whole difference between adding and removing.
+#[tokio::test]
+async fn favouriting_posts_and_unfavouriting_deletes() {
+    let server = MockServer::start().await;
+    let path_ = "/v3/users/PLACEHOLDERUSERID0001/tracks/trk_one/favorites";
+
+    Mock::given(method("POST"))
+        .and(path(path_))
+        .respond_with(json(r#"{"status":200,"result":{}}"#.to_string()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("DELETE"))
+        .and(path(path_))
+        .respond_with(json(r#"{"status":200,"result":{}}"#.to_string()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let c = client(&server);
+    c.set_favorite("trk_one", true).await.unwrap();
+    c.set_favorite("trk_one", false).await.unwrap();
+}
+
+/// Dislikes are the odd one out: /v2, a query version, and a body.
+#[tokio::test]
+async fn disliking_posts_the_track_id_as_a_body() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v2/users/PLACEHOLDERUSERID0001/dislikes"))
+        .and(query_param("version", "3"))
+        .and(body_json_string(
+            serde_json::json!({ "trackId": "trk_one" }).to_string(),
+        ))
+        .respond_with(json(r#"{"status":200,"result":{}}"#.to_string()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    client(&server).dislike("trk_one").await.unwrap();
+}
+
+/// A reaction is still an API call, so it must surface a renewed token like
+/// any other — otherwise a long session silently stops renewing.
+#[tokio::test]
+async fn a_reaction_surfaces_a_rotated_token() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v3/users/PLACEHOLDERUSERID0001/tracks/t/favorites"))
+        .respond_with(json(
+            r#"{"status":200,"result":{},"token":"fresh.jwt.here"}"#.to_string(),
+        ))
+        .mount(&server)
+        .await;
+
+    let rot = client(&server).set_favorite("t", true).await.unwrap();
+    assert_eq!(rot.0.as_deref(), Some("fresh.jwt.here"));
+}
+
+#[tokio::test]
+async fn favourites_list_parses_as_servings() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v3/users/PLACEHOLDERUSERID0001/servings/favorites"))
+        .and(query_param("version", "2"))
+        .respond_with(json(fixture("servings_new.json")))
+        .mount(&server)
+        .await;
+
+    let (list, _) = client(&server).favorites().await.unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].track.name, "Alcatraz");
+}

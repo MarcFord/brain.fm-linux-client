@@ -32,7 +32,8 @@ pub const INTERFACE: &str = "dev.marcford.BrainFM1";
 /// * 3 — `Track` gained `image_url` and `art_path`. Adding keys to an
 ///   existing `a{sv}` is additive: the signature is unchanged and older
 ///   clients simply ignore them.
-pub const INTERFACE_VERSION: u32 = 3;
+/// * 4 — added `Favorite` and `Dislike`; `Track` gained `is_favorite`.
+pub const INTERFACE_VERSION: u32 = 4;
 
 /// MPRIS bus name, for `playerctl -p bfm` and media keys.
 pub const MPRIS_BUS_NAME: &str = "org.mpris.MediaPlayer2.bfm";
@@ -181,6 +182,17 @@ pub trait BrainFM1 {
     fn pause(&self) -> zbus::Result<()>;
     fn resume(&self) -> zbus::Result<()>;
     fn skip_track(&self) -> zbus::Result<()>;
+
+    /// Favourite or un-favourite a track. Interface version 4.
+    ///
+    /// Pass an empty `track_id` for whatever is playing now.
+    fn favorite(&self, track_id: &str, on: bool) -> zbus::Result<()>;
+
+    /// Dislike a track so it stops being served, and move on from it.
+    /// Interface version 4.
+    ///
+    /// Pass an empty `track_id` for whatever is playing now.
+    fn dislike(&self, track_id: &str) -> zbus::Result<()>;
 
     /// Set or replace the timer: `"50m"`, `"25m/5m"`, `"25m/5m x4"`, or `""`
     /// to clear.

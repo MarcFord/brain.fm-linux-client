@@ -2,7 +2,7 @@
 
 use bfm_ui_core::{
     Catalog, Client, Command, Effort, Filters, Playback, SessionMode, State, Update,
-    format_duration, needs_login,
+    format_duration, needs_login, share_text,
 };
 use relm4::{
     ComponentParts, ComponentSender, RelmWidgetExt, SimpleComponent,
@@ -42,6 +42,8 @@ pub struct App {
     filters: Filters,
     /// The state whose catalog we are waiting on, if any.
     pending_start: Option<&'static str>,
+    /// A short confirmation, distinct from an error.
+    notice: Option<String>,
     /// Set once the view has been built and the stack has its pages.
     stack_ready: bool,
 }
@@ -64,7 +66,10 @@ pub enum Msg {
     Volume(f64),
     OpenModeDialog,
     SetMode(SessionMode),
-    DismissError,
+    ToggleFavorite,
+    Dislike,
+    Share,
+    DismissBanner,
 }
 
 #[relm4::component(pub)]
@@ -104,25 +109,32 @@ impl SimpleComponent for App {
                     // toast: "sign in" is a state, not a notification.
                     gtk::Revealer {
                         #[watch]
-                        set_reveal_child: model.error.is_some(),
+                        set_reveal_child: model.error.is_some() || model.notice.is_some(),
                         gtk::Box {
                             set_orientation: gtk::Orientation::Horizontal,
                             set_spacing: 8,
                             set_margin_all: 8,
                             add_css_class: "card",
 
-                            gtk::Image { set_icon_name: Some("dialog-warning-symbolic") },
+                            gtk::Image {
+                                #[watch]
+                                set_icon_name: Some(if model.error.is_some() {
+                                    "dialog-warning-symbolic"
+                                } else {
+                                    "object-select-symbolic"
+                                }),
+                            },
                             gtk::Label {
                                 set_wrap: true,
                                 set_xalign: 0.0,
                                 set_hexpand: true,
                                 #[watch]
-                                set_label: model.error.as_deref().unwrap_or(""),
+                                set_label: model.banner_text(),
                             },
                             gtk::Button {
                                 set_icon_name: "window-close-symbolic",
                                 add_css_class: "flat",
-                                connect_clicked => Msg::DismissError,
+                                connect_clicked => Msg::DismissBanner,
                             },
                         },
                     },
@@ -249,6 +261,48 @@ impl SimpleComponent for App {
                                     set_label: &model.position_label(),
                                 },
 
+                                // Reactions. The icon names here were
+                                // checked against the installed theme:
+                                // Adwaita has no thumbs-down glyph, so
+                                // dislike uses its "not wanted" symbol.
+                                gtk::Box {
+                                    set_halign: gtk::Align::Center,
+                                    set_spacing: 18,
+                                    set_margin_top: 4,
+
+                                    gtk::Button {
+                                        add_css_class: "flat",
+                                        add_css_class: "circular",
+                                        set_tooltip_text: Some("Don't play this again"),
+                                        set_icon_name: "action-unavailable-symbolic",
+                                        #[watch]
+                                        set_sensitive: model.state.track.is_some(),
+                                        connect_clicked => Msg::Dislike,
+                                    },
+                                    gtk::Button {
+                                        add_css_class: "flat",
+                                        add_css_class: "circular",
+                                        #[watch]
+                                        set_icon_name: model.favorite_icon(),
+                                        #[watch]
+                                        set_css_classes: model.favorite_classes(),
+                                        #[watch]
+                                        set_tooltip_text: Some(model.favorite_tooltip()),
+                                        #[watch]
+                                        set_sensitive: model.state.track.is_some(),
+                                        connect_clicked => Msg::ToggleFavorite,
+                                    },
+                                    gtk::Button {
+                                        add_css_class: "flat",
+                                        add_css_class: "circular",
+                                        set_icon_name: "share-symbolic",
+                                        set_tooltip_text: Some("Copy track details"),
+                                        #[watch]
+                                        set_sensitive: model.state.track.is_some(),
+                                        connect_clicked => Msg::Share,
+                                    },
+                                },
+
                                 gtk::Box {
                                     set_halign: gtk::Align::Center,
                                     set_spacing: 12,
@@ -341,6 +395,7 @@ impl SimpleComponent for App {
             mode: SessionMode::default(),
             filters: Filters::default(),
             pending_start: None,
+            notice: None,
             state: State::default(),
             connected: false,
             error: None,
@@ -361,6 +416,7 @@ impl SimpleComponent for App {
             }
             .bfm-scrim label { color: #ffffff; }
             .bfm-scrim label.dim-label { color: alpha(#ffffff, 0.72); }
+            .bfm-faved { color: #e01b24; }
             ",
         );
 
@@ -465,7 +521,27 @@ impl SimpleComponent for App {
             Msg::Skip => self.client.send(Command::Skip),
             Msg::Stop => self.client.send(Command::Stop),
             Msg::Volume(v) => self.client.send(Command::SetVolume(v)),
-            Msg::DismissError => self.error = None,
+            Msg::DismissBanner => {
+                self.error = None;
+                self.notice = None;
+            }
+
+            Msg::ToggleFavorite => {
+                let on = !self.state.track.as_ref().is_some_and(|t| t.is_favorite);
+                self.client.send(Command::Favorite(on));
+            }
+
+            Msg::Dislike => self.client.send(Command::Dislike),
+
+            Msg::Share => {
+                // Brain.fm has no per-track URL, so this is a copy rather
+                // than a link someone can follow to the track itself.
+                if let Some(track) = self.state.track.as_ref() {
+                    let text = share_text(track, &self.state.mental_state);
+                    self.window.clipboard().set_text(&text);
+                    self.notice = Some("Track details copied".into());
+                }
+            }
 
             Msg::OpenModeDialog => present_mode_dialog(&self.window, self.mode, &sender),
 
@@ -498,6 +574,43 @@ impl SimpleComponent for App {
 }
 
 impl App {
+    fn banner_text(&self) -> &str {
+        self.error
+            .as_deref()
+            .or(self.notice.as_deref())
+            .unwrap_or("")
+    }
+
+    fn is_favorite(&self) -> bool {
+        self.state.track.as_ref().is_some_and(|t| t.is_favorite)
+    }
+
+    /// Adwaita has no outline heart, so the unfavourited state uses the
+    /// emblem and relies on colour for the difference.
+    fn favorite_icon(&self) -> &'static str {
+        if self.is_favorite() {
+            "heart-filled-symbolic"
+        } else {
+            "emblem-favorite-symbolic"
+        }
+    }
+
+    fn favorite_classes(&self) -> &'static [&'static str] {
+        if self.is_favorite() {
+            &["flat", "circular", "bfm-faved"]
+        } else {
+            &["flat", "circular"]
+        }
+    }
+
+    fn favorite_tooltip(&self) -> &'static str {
+        if self.is_favorite() {
+            "Remove from favourites"
+        } else {
+            "Add to favourites"
+        }
+    }
+
     /// Only dim when there is actually an image behind the controls.
     fn scrim_classes(&self) -> &'static [&'static str] {
         if self.state.art_file().is_some() {

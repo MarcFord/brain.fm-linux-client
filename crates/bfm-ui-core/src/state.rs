@@ -50,6 +50,7 @@ pub struct Track {
     /// Local file the daemon has already cached. Front-ends load this and
     /// never fetch anything themselves.
     pub art_path: String,
+    pub is_favorite: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -113,6 +114,20 @@ impl State {
 /// What a front-end should show when nothing is playing.
 pub const IDLE_LABEL: &str = "Nothing playing";
 
+/// Text for a "share this track" action.
+///
+/// Brain.fm has **no per-track public URL** — the web app's share button
+/// writes to the clipboard, and the only share route in its bundle is an
+/// unrelated referral deep link. So this names the track and links to the
+/// service, rather than inventing an address that resolves to nothing.
+pub fn share_text(track: &Track, mental_state: &str) -> String {
+    let mut s = format!("{} — Brain.fm", track.name);
+    if !mental_state.is_empty() {
+        s = format!("{} ({})", s, mental_state);
+    }
+    format!("{s}\nhttps://my.brain.fm/")
+}
+
 /// `h:mm:ss` past an hour, `m:ss` below it.
 ///
 /// Brain.fm tracks run 30 minutes and sleep sessions run nine hours, so both
@@ -163,6 +178,10 @@ pub fn track_from(m: &HashMap<String, OwnedVariant>) -> Option<Track> {
         neural_effect: var_f64(m, "neural_effect").unwrap_or(0.0),
         image_url: var_str(m, "image_url").unwrap_or_default(),
         art_path: var_str(m, "art_path").unwrap_or_default(),
+        is_favorite: m
+            .get("is_favorite")
+            .and_then(|v| bool::try_from(v.clone()).ok())
+            .unwrap_or(false),
     })
 }
 
@@ -283,6 +302,55 @@ mod tests {
         };
         assert!(s.art_file().is_some());
         std::fs::remove_file(&f).ok();
+    }
+
+    #[test]
+    fn favourite_state_parses_and_defaults_to_false() {
+        let with = map(&[
+            ("name", Variant::from("Topography")),
+            ("is_favorite", Variant::from(true)),
+        ]);
+        assert!(track_from(&with).unwrap().is_favorite);
+
+        // An older daemon sends no such key.
+        let without = map(&[("name", Variant::from("Topography"))]);
+        assert!(!track_from(&without).unwrap().is_favorite);
+    }
+
+    #[test]
+    fn share_text_names_the_track_and_links_to_the_service() {
+        let t = Track {
+            name: "Topography".into(),
+            ..Default::default()
+        };
+        let s = share_text(&t, "focus");
+        assert!(s.contains("Topography"));
+        assert!(s.contains("focus"));
+        assert!(s.contains("https://my.brain.fm/"));
+    }
+
+    /// There is no per-track URL, so nothing may fabricate one that 404s.
+    #[test]
+    fn share_text_does_not_invent_a_track_url() {
+        let t = Track {
+            id: "trk_abc".into(),
+            name: "Topography".into(),
+            ..Default::default()
+        };
+        let s = share_text(&t, "focus");
+        assert!(
+            !s.contains("trk_abc"),
+            "must not build a fake per-track link: {s}"
+        );
+    }
+
+    #[test]
+    fn share_text_omits_an_unknown_state() {
+        let t = Track {
+            name: "Topography".into(),
+            ..Default::default()
+        };
+        assert!(!share_text(&t, "").contains("()"));
     }
 
     #[test]

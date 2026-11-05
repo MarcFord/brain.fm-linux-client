@@ -1,6 +1,6 @@
 [package]
 name = "bfm-player"
-description = "Audio engine for bfm: progressive MP3 playback with a bounded buffer."
+description = "Audio engine for bfm: progressive MP3 playback with disk-backed buffering."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,3 +12,14 @@ authors.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+
+# Brain.fm serves progressive MP3 and nothing else, so the other decoders are
+# dead weight. `playback` is the output device; `mp3` pulls symphonia-mp3.
+rodio = { version = "0.23", default-features = false, features = ["playback", "mp3"] }
+
+# Disk-backed, not in-memory: tracks are 30 minutes (~30-60 MB each).
+stream-download = { version = "0.24", default-features = false, features = [
+    "http",
+    "reqwest-rustls",
+    "temp-storage",
+] }

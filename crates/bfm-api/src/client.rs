@@ -233,19 +233,26 @@ impl Client {
         .await
     }
 
+    /// Start a session, receiving its whole queue.
+    ///
+    /// Unlike [`Client::new_serving`], this wraps the servings in an object
+    /// and returns the full run of tracks, so a caller should play through
+    /// the queue rather than asking for each next track.
     pub async fn start_session(
         &self,
         req: &SessionRequest,
     ) -> Result<(Vec<Serving>, TokenRotation)> {
         let uid = self.user_id()?;
-        self.send(
-            self.http
-                .post(format!("{}/users/{uid}/sessions", self.v3))
-                .query(&[("platform", "web")])
-                .json(req),
-            "sessions",
-        )
-        .await
+        let (session, rotation): (SessionResponse, _) = self
+            .send(
+                self.http
+                    .post(format!("{}/users/{uid}/sessions", self.v3))
+                    .query(&[("platform", "web")])
+                    .json(req),
+                "sessions",
+            )
+            .await?;
+        Ok((session.servings, rotation))
     }
 
     // ---- account ----

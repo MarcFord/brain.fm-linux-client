@@ -92,6 +92,21 @@ pub struct Genres {
     pub nature_genre_names: Vec<String>,
 }
 
+/// What `POST /v3/users/{uid}/sessions` actually returns.
+///
+/// Note this is **not** the shape of `GET /v3/servings/new`, which returns a
+/// bare array. A session wraps its servings in an object — and hands over the
+/// entire queue at once (40 observed), not one track. There is therefore no
+/// need to call the API again between tracks.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionResponse {
+    #[serde(rename = "type", default)]
+    pub kind: Option<String>,
+    #[serde(default)]
+    pub servings: Vec<Serving>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Serving {

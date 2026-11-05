@@ -4,9 +4,13 @@
 //! to — so it speaks only about sessions, tracks and timers. No keystrokes,
 //! no UI concepts, nothing that leaks how the daemon happens to be built.
 
-use std::{collections::HashMap, sync::Mutex, time::Duration};
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::Mutex,
+    time::Duration,
+};
 
-use bfm_api::{ApiError, AuthMethod, EffectLevel, Password, SessionRequest, SessionToken};
+use bfm_api::{ApiError, AuthMethod, EffectLevel, Password, Serving, SessionRequest, SessionToken};
 use bfm_player::{Command, Event, NullPlayer, Player};
 use bfm_proto::{INTERFACE_VERSION, auth_method, error_code};
 use zbus::{Variant, interface, object_server::SignalEmitter};
@@ -36,6 +40,11 @@ pub struct BrainFm {
     pub track: Option<TrackInfo>,
     /// Seconds into the current track, fed by the audio engine.
     pub position: u64,
+    /// Remaining tracks for this session.
+    ///
+    /// `POST /sessions` hands over the whole run at once (40 observed), so
+    /// moving to the next track is a local pop, not a network round trip.
+    queue: VecDeque<Serving>,
 
     api: bfm_api::Client,
     store: Box<dyn TokenStore>,
@@ -67,6 +76,7 @@ impl BrainFm {
             timer: None,
             track: None,
             position: 0,
+            queue: VecDeque::new(),
             hooks: Hooks::load(),
             api,
             store,
@@ -205,12 +215,15 @@ impl BrainFm {
         let (servings, rot) = self.api.start_session(&req).await.map_err(api_error)?;
         self.persist_rotation(&rot);
 
-        let serving = servings.into_iter().next().ok_or_else(|| {
+        let queued = servings.len();
+        self.queue = VecDeque::from(servings);
+        let serving = self.queue.pop_front().ok_or_else(|| {
             zbus::fdo::Error::Failed(format!(
                 "{}: the API returned a session with no tracks",
                 error_code::UPSTREAM
             ))
         })?;
+        tracing::info!(queued, "session queue received");
 
         let length = serving.track_variation.length_in_seconds.max(0.0) as u64;
         // The URL is signed; only the scrubbed form is ever logged.
@@ -264,6 +277,7 @@ impl BrainFm {
         self.track = None;
         self.timer = None;
         self.position = 0;
+        self.queue.clear();
 
         let _ = self.state_changed(&emitter).await;
         let _ = self.track_changed(&emitter).await;
@@ -309,13 +323,18 @@ impl BrainFm {
             return Err(zbus::fdo::Error::Failed("no session is running".into()));
         }
 
-        let (servings, rot) = self.api.new_serving(&state).await.map_err(api_error)?;
-        self.persist_rotation(&rot);
-
-        let serving = servings
-            .into_iter()
-            .next()
-            .ok_or_else(|| zbus::fdo::Error::Failed("no next track available".into()))?;
+        let serving = match self.queue.pop_front() {
+            Some(s) => s,
+            None => {
+                // Queue exhausted: ask for one more.
+                let (servings, rot) = self.api.new_serving(&state).await.map_err(api_error)?;
+                self.persist_rotation(&rot);
+                servings
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| zbus::fdo::Error::Failed("no next track available".into()))?
+            }
+        };
         let length = serving.track_variation.length_in_seconds.max(0.0) as u64;
 
         self.send(Command::Load {
@@ -643,21 +662,28 @@ impl BrainFm {
         }
     }
 
-    /// Fetch and queue the next track for the running session.
+    /// Queue the next track for the running session.
+    ///
+    /// Normally a local pop: the session arrived with its whole run of
+    /// tracks. Only a drained queue costs a request.
     async fn queue_next(&mut self) -> Result<(), String> {
         let state = self.mental_state.clone();
         if state.is_empty() || self.api.token().is_none() {
             return Ok(());
         }
 
-        let (servings, rot) = self
-            .api
-            .new_serving(&state)
-            .await
-            .map_err(|e| e.to_string())?;
-        self.persist_rotation(&rot);
-
-        let serving = servings.into_iter().next().ok_or("no next track")?;
+        let serving = match self.queue.pop_front() {
+            Some(s) => s,
+            None => {
+                let (servings, rot) = self
+                    .api
+                    .new_serving(&state)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                self.persist_rotation(&rot);
+                servings.into_iter().next().ok_or("no next track")?
+            }
+        };
         let length = serving.track_variation.length_in_seconds.max(0.0) as u64;
         tracing::info!(
             next = %serving.track.name,

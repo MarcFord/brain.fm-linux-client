@@ -185,7 +185,7 @@ async fn session_request_serialises_the_shape_the_api_expects() {
         .and(path("/v3/users/PLACEHOLDERUSERID0001/sessions"))
         .and(query_param("platform", "web"))
         .and(body_json_string(expected))
-        .respond_with(json(fixture("servings_new.json")))
+        .respond_with(json(fixture("session_create.json")))
         .expect(1)
         .mount(&server)
         .await;
@@ -193,6 +193,46 @@ async fn session_request_serialises_the_shape_the_api_expects() {
     let req = SessionRequest::new("QYN78dJrrzs5mD_TJgBcq", EffectLevel::High)
         .with_genres(["Electronic".to_string()]);
     client(&server).start_session(&req).await.unwrap();
+}
+
+/// `POST /sessions` wraps its servings in an object and returns the whole
+/// queue; `GET /servings/new` returns a bare array. Modelling them the same
+/// way is what made the first live `bfm play` fail.
+#[tokio::test]
+async fn session_create_returns_a_whole_queue_not_one_track() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v3/users/PLACEHOLDERUSERID0001/sessions"))
+        .respond_with(json(fixture("session_create.json")))
+        .mount(&server)
+        .await;
+
+    let req = SessionRequest::new("QYN78dJrrzs5mD_TJgBcq", EffectLevel::High);
+    let (servings, _) = client(&server).start_session(&req).await.unwrap();
+
+    assert_eq!(
+        servings.len(),
+        2,
+        "the full queue, not just the first track"
+    );
+    assert_eq!(servings[0].track.name, "Alcatraz");
+    assert_eq!(servings[1].track.name, "Second Track");
+    assert_eq!(servings[0].track_variation.length_in_seconds, 1800.0);
+}
+
+/// The two endpoints genuinely differ, so the array shape must not parse as
+/// a session response and vice versa.
+#[tokio::test]
+async fn the_two_track_endpoints_have_different_envelopes() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v3/servings/new"))
+        .respond_with(json(fixture("servings_new.json")))
+        .mount(&server)
+        .await;
+
+    let (bare, _) = client(&server).new_serving("focus").await.unwrap();
+    assert_eq!(bare.len(), 1, "servings/new is a bare array");
 }
 
 // ---------------------------------------------------------------- renewal

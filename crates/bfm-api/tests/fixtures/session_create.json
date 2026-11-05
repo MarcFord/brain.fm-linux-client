@@ -1,0 +1,31 @@
+{
+  "status": 200,
+  "result": {
+    "type": "dynamic",
+    "dynamicActivity": { "id": "QYN78dJrrzs5mD_TJgBcq", "displayValue": "Deep Work" },
+    "servings": [
+      {
+        "track": {
+          "id": "trk_one", "name": "Alcatraz", "imageUrl": null,
+          "beatsPerMinute": 112, "tags": []
+        },
+        "trackVariation": {
+          "id": "tv_one",
+          "url": "tracks/one.mp3", "baseUrl": "tracks/one.mp3",
+          "cdnUrl": "https://audio2.brain.fm/one.mp3",
+          "tokenedUrl": "https://audio2.brain.fm/one.mp3?expiration=1801687490428&token=PLACEHOLDER",
+          "lengthInSeconds": 1800, "neuralEffectLevel": 0.06, "style": "normal"
+        }
+      },
+      {
+        "track": { "id": "trk_two", "name": "Second Track", "tags": [] },
+        "trackVariation": {
+          "id": "tv_two",
+          "cdnUrl": "https://audio2.brain.fm/two.mp3",
+          "tokenedUrl": "https://audio2.brain.fm/two.mp3?expiration=1801687490428&token=PLACEHOLDER",
+          "lengthInSeconds": 1800, "neuralEffectLevel": 0.06, "style": "normal"
+        }
+      }
+    ]
+  }
+}

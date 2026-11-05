@@ -10,6 +10,7 @@
 //! asynchronously). The daemon talks to it only over channels.
 
 use std::{
+    io::BufReader,
     sync::mpsc::{self, Receiver, RecvTimeoutError, Sender},
     thread,
     time::{Duration, Instant},
@@ -79,7 +80,7 @@ fn run(commands: Receiver<Command>, events: Sender<Event>, ready: Sender<Result<
             return;
         }
     };
-    let player = RodioPlayer::connect_new(&device.mixer());
+    let player = RodioPlayer::connect_new(device.mixer());
 
     // StreamDownload opens the HTTP stream asynchronously; this thread owns a
     // single-threaded runtime for that and nothing else.
@@ -207,7 +208,7 @@ fn tick(
 fn open(
     url: &str,
     rt: &tokio::runtime::Runtime,
-) -> Result<Decoder<StreamDownload<TempStorageProvider>>, PlayerError> {
+) -> Result<Decoder<BufReader<StreamDownload<TempStorageProvider>>>, PlayerError> {
     let parsed = url
         .parse()
         .map_err(|_| PlayerError::Decode("audio URL did not parse".into()))?;
@@ -222,7 +223,8 @@ fn open(
         // error message.
         .map_err(|_| PlayerError::Decode("could not open the audio stream".into()))?;
 
-    Decoder::try_from(reader).map_err(|e| PlayerError::Decode(e.to_string()))
+    // rodio decodes from a BufReader, not a bare reader.
+    Decoder::try_from(BufReader::new(reader)).map_err(|e| PlayerError::Decode(e.to_string()))
 }
 
 fn emit_error(events: &Sender<Event>, e: PlayerError) -> bool {

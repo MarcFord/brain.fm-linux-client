@@ -276,3 +276,135 @@ async fn an_invalid_effort_is_rejected_with_the_valid_values() {
     let msg = err.to_string();
     assert!(msg.contains("low") && msg.contains("high"), "got: {msg}");
 }
+
+// ---------------------------------------------------------------- MPRIS
+
+/// Serve BrainFM1 *and* MPRIS, as the daemon does, so the delegation between
+/// them is exercised rather than assumed.
+async fn serve_with_mpris(tag: &str) -> Option<(zbus::Connection, String)> {
+    let name = format!("dev.marcford.bfm.mpris{tag}");
+    let conn = connection::Builder::session()
+        .name(name.clone())
+        .serve_at(OBJECT_PATH, BrainFm::default())
+        .serve_at(bfmd::mpris::MPRIS_PATH, bfmd::mpris::Root)
+        .serve_at(bfmd::mpris::MPRIS_PATH, bfmd::mpris::Player)
+        .build()
+        .await
+        .ok()?;
+    Some((conn, name))
+}
+
+macro_rules! mpris_or_skip {
+    ($tag:expr) => {
+        match serve_with_mpris($tag).await {
+            Some(v) => v,
+            None => {
+                eprintln!("no session bus; skipping MPRIS test");
+                return;
+            }
+        }
+    };
+}
+
+async fn mpris_player<'a>(conn: &'a zbus::Connection, name: &str) -> zbus::Proxy<'a> {
+    zbus::Proxy::new(
+        conn,
+        name.to_owned(),
+        bfmd::mpris::MPRIS_PATH,
+        "org.mpris.MediaPlayer2.Player",
+    )
+    .await
+    .expect("mpris proxy")
+}
+
+/// Capabilities must describe what actually works. Claiming `CanSeek` would
+/// make well-behaved clients offer a scrubber that silently does nothing.
+#[tokio::test]
+async fn mpris_capabilities_are_honest() {
+    let (conn, name) = mpris_or_skip!("caps");
+    let p = mpris_player(&conn, &name).await;
+
+    assert!(p.get_property::<bool>("CanPlay").await.unwrap());
+    assert!(p.get_property::<bool>("CanPause").await.unwrap());
+    assert!(p.get_property::<bool>("CanGoNext").await.unwrap());
+    assert!(p.get_property::<bool>("CanControl").await.unwrap());
+    // Brain.fm sessions only move forward, and the decoder cannot seek.
+    assert!(!p.get_property::<bool>("CanGoPrevious").await.unwrap());
+    assert!(!p.get_property::<bool>("CanSeek").await.unwrap());
+}
+
+#[tokio::test]
+async fn mpris_reports_a_spec_valid_playback_status() {
+    let (conn, name) = mpris_or_skip!("status");
+    let p = mpris_player(&conn, &name).await;
+
+    let s: String = p.get_property("PlaybackStatus").await.unwrap();
+    assert!(
+        ["Playing", "Paused", "Stopped"].contains(&s.as_str()),
+        "MPRIS only permits those three, got {s:?}"
+    );
+    assert_eq!(s, "Stopped", "a fresh daemon is stopped");
+}
+
+/// The whole point of layering MPRIS over the domain interface: one state,
+/// two views of it. If these ever diverge, a media key and the CLI disagree.
+#[tokio::test]
+async fn mpris_and_brainfm1_share_one_state() {
+    let (conn, name) = mpris_or_skip!("shared");
+    let m = mpris_player(&conn, &name).await;
+    let b = proxy(&conn, &name).await;
+
+    m.set_property("Volume", 0.3f64).await.unwrap();
+    assert!(
+        (b.volume().await.unwrap() - 0.3).abs() < 1e-9,
+        "MPRIS -> BrainFM1"
+    );
+
+    b.set_volume(0.75).await.unwrap();
+    let v: f64 = m.get_property("Volume").await.unwrap();
+    assert!((v - 0.75).abs() < 1e-9, "BrainFM1 -> MPRIS");
+}
+
+/// A media key on an idle player must not blow up.
+#[tokio::test]
+async fn mpris_playpause_is_safe_while_idle() {
+    let (conn, name) = mpris_or_skip!("playpause");
+    let m = mpris_player(&conn, &name).await;
+
+    m.call_method("PlayPause", &()).await.unwrap();
+    let s: String = m.get_property("PlaybackStatus").await.unwrap();
+    assert_eq!(s, "Stopped");
+}
+
+#[tokio::test]
+async fn mpris_metadata_is_empty_with_no_track() {
+    let (conn, name) = mpris_or_skip!("meta");
+    let m = mpris_player(&conn, &name).await;
+
+    let meta: std::collections::HashMap<String, zbus::OwnedVariant> =
+        m.get_property("Metadata").await.unwrap();
+    assert!(
+        meta.is_empty(),
+        "no track means no metadata, not a fake one"
+    );
+}
+
+#[tokio::test]
+async fn mpris_root_identifies_itself() {
+    let (conn, name) = mpris_or_skip!("root");
+    let root = zbus::Proxy::new(
+        &conn,
+        name,
+        bfmd::mpris::MPRIS_PATH,
+        "org.mpris.MediaPlayer2",
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        root.get_property::<String>("Identity").await.unwrap(),
+        "Brain.fm"
+    );
+    assert!(!root.get_property::<bool>("CanQuit").await.unwrap());
+    assert!(!root.get_property::<bool>("HasTrackList").await.unwrap());
+}

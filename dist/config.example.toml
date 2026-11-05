@@ -1,0 +1,21 @@
+# bfm configuration — copy to ~/.config/bfm/config.toml
+#
+# Hooks run a shell command when something happens. Event data arrives in the
+# environment, so you never have to worry about quoting.
+#
+# They are fire-and-forget: a slow hook cannot stall playback, and two hooks
+# triggered by the same event may finish in either order.
+
+[hooks]
+# A session began. $BFM_STATE, $BFM_ACTIVITY
+session_start = "makoctl mode -a dnd"
+
+# A session ended. $BFM_REASON is stopped | track-ended | timer-elapsed
+session_end = "makoctl mode -r dnd"
+
+# A new track started. $BFM_TRACK, $BFM_LENGTH (seconds)
+# track_start = "notify-send 'brain.fm' \"$BFM_TRACK\""
+
+# A timer moved between phases. $BFM_TIMER_PHASE is work | break | done,
+# $BFM_TIMER_REMAINING is seconds.
+timer_phase = "notify-send 'brain.fm' \"$BFM_TIMER_PHASE — ${BFM_TIMER_REMAINING}s left\""

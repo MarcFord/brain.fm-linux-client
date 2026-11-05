@@ -7,11 +7,12 @@
 use std::{collections::HashMap, sync::Mutex, time::Duration};
 
 use bfm_api::{ApiError, AuthMethod, EffectLevel, Password, SessionRequest, SessionToken};
-use bfm_player::{Command, NullPlayer, Player};
+use bfm_player::{Command, Event, NullPlayer, Player};
 use bfm_proto::{INTERFACE_VERSION, auth_method, error_code};
 use zbus::{Variant, interface, object_server::SignalEmitter};
 
 use crate::{
+    hooks::{self, Hooks},
     store::{MemoryStore, TokenStore},
     timer::{Phase, Timer, TimerSpec},
 };
@@ -33,9 +34,12 @@ pub struct BrainFm {
     pub volume: f64,
     pub timer: Option<Timer>,
     pub track: Option<TrackInfo>,
+    /// Seconds into the current track, fed by the audio engine.
+    pub position: u64,
 
     api: bfm_api::Client,
     store: Box<dyn TokenStore>,
+    hooks: Hooks,
     /// `Mutex` because the audio handle is `Send` but not `Sync`, and zbus
     /// requires the served type to be both.
     player: Mutex<Box<dyn Player>>,
@@ -62,6 +66,8 @@ impl BrainFm {
             volume: 1.0,
             timer: None,
             track: None,
+            position: 0,
+            hooks: Hooks::load(),
             api,
             store,
             player: Mutex::new(player),
@@ -223,6 +229,7 @@ impl BrainFm {
         self.mental_state = state.to_owned();
         self.activity = activity_id.clone();
         self.playback = "buffering";
+        self.position = 0;
         self.track = Some(TrackInfo {
             id: serving.track.id.clone(),
             name: serving.track.name.clone(),
@@ -236,10 +243,19 @@ impl BrainFm {
         let _ = self.timer_changed(&emitter).await;
         let _ = Self::session_started(&emitter, &serving.track.id).await;
         let _ = Self::track_started(&emitter, &serving.track.name, length).await;
+
+        self.hooks.fire(&hooks::Event::SessionStart {
+            state: state.to_owned(),
+            activity: activity_id,
+        });
+        self.hooks.fire(&hooks::Event::TrackStart {
+            track: serving.track.name.clone(),
+            length,
+        });
         Ok(serving.track.id)
     }
 
-    async fn stop_session(
+    pub async fn stop_session(
         &mut self,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> zbus::fdo::Result<()> {
@@ -247,15 +263,19 @@ impl BrainFm {
         self.playback = "idle";
         self.track = None;
         self.timer = None;
+        self.position = 0;
 
         let _ = self.state_changed(&emitter).await;
         let _ = self.track_changed(&emitter).await;
         let _ = self.timer_changed(&emitter).await;
         let _ = Self::session_ended(&emitter, "stopped").await;
+        self.hooks.fire(&hooks::Event::SessionEnd {
+            reason: "stopped".into(),
+        });
         Ok(())
     }
 
-    async fn pause(
+    pub async fn pause(
         &mut self,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> zbus::fdo::Result<()> {
@@ -267,7 +287,7 @@ impl BrainFm {
         Ok(())
     }
 
-    async fn resume(
+    pub async fn resume(
         &mut self,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> zbus::fdo::Result<()> {
@@ -279,7 +299,7 @@ impl BrainFm {
         Ok(())
     }
 
-    async fn skip_track(
+    pub async fn skip_track(
         &mut self,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> zbus::fdo::Result<()> {
@@ -308,9 +328,14 @@ impl BrainFm {
             length,
             neural_effect: serving.track_variation.neural_effect_level.unwrap_or(0.0),
         });
+        self.position = 0;
 
         let _ = self.track_changed(&emitter).await;
         let _ = Self::track_started(&emitter, &serving.track.name, length).await;
+        self.hooks.fire(&hooks::Event::TrackStart {
+            track: serving.track.name.clone(),
+            length,
+        });
         Ok(())
     }
 
@@ -405,7 +430,7 @@ impl BrainFm {
 
     #[zbus(property)]
     async fn position(&self) -> u64 {
-        0
+        self.position
     }
 
     #[zbus(property)]
@@ -419,7 +444,7 @@ impl BrainFm {
     }
 
     #[zbus(property)]
-    async fn set_volume(&mut self, volume: f64) {
+    pub async fn set_volume(&mut self, volume: f64) {
         self.volume = volume.clamp(0.0, 1.0);
         let _ = self.send(Command::SetVolume(self.volume as f32));
     }
@@ -558,6 +583,101 @@ impl BrainFm {
                     names.join(", ")
                 ))
             })
+    }
+
+    /// Drain the audio engine and react.
+    ///
+    /// This is the session orchestration: without it a track plays once and
+    /// nothing follows it. Called from the daemon's tick, which is also what
+    /// keeps `Position` honest.
+    pub async fn pump(&mut self, emitter: &SignalEmitter<'_>) {
+        let events = match self.player.lock() {
+            Ok(mut p) => p.poll(),
+            Err(_) => return,
+        };
+
+        for event in events {
+            match event {
+                Event::Started { .. } => {
+                    if self.playback != "playing" {
+                        self.playback = "playing";
+                        let _ = self.state_changed(emitter).await;
+                    }
+                }
+
+                Event::Position { secs } => {
+                    let secs = secs.max(0.0) as u64;
+                    // Only notify on a whole-second change; a 250ms tick
+                    // would otherwise spam every client four times a second.
+                    if secs != self.position {
+                        self.position = secs;
+                        let _ = self.position_changed(emitter).await;
+                    }
+                }
+
+                // Fetch the next track and queue it behind the current one.
+                // Gapless depends on this happening before the end.
+                Event::NearEnd { generation } => {
+                    if let Err(e) = self.queue_next().await {
+                        tracing::warn!(generation, error = %e, "could not prefetch the next track");
+                        let _ = Self::error(emitter, error_code::UPSTREAM, &e.to_string()).await;
+                    }
+                }
+
+                Event::Ended { .. } => {
+                    // The queue drained without a successor.
+                    self.playback = "idle";
+                    self.position = 0;
+                    let _ = self.state_changed(emitter).await;
+                    let _ = Self::session_ended(emitter, "track-ended").await;
+                    self.hooks.fire(&hooks::Event::SessionEnd {
+                        reason: "track-ended".into(),
+                    });
+                }
+
+                Event::Error { message } => {
+                    tracing::error!(message, "audio engine error");
+                    let _ = Self::error(emitter, error_code::AUDIO_DEVICE, &message).await;
+                }
+            }
+        }
+    }
+
+    /// Fetch and queue the next track for the running session.
+    async fn queue_next(&mut self) -> Result<(), String> {
+        let state = self.mental_state.clone();
+        if state.is_empty() || self.api.token().is_none() {
+            return Ok(());
+        }
+
+        let (servings, rot) = self
+            .api
+            .new_serving(&state)
+            .await
+            .map_err(|e| e.to_string())?;
+        self.persist_rotation(&rot);
+
+        let serving = servings.into_iter().next().ok_or("no next track")?;
+        let length = serving.track_variation.length_in_seconds.max(0.0) as u64;
+        tracing::info!(
+            next = %serving.track.name,
+            url = %serving.track_variation.loggable_url(),
+            "queued next track"
+        );
+
+        self.player
+            .lock()
+            .map_err(|_| "audio engine is poisoned".to_string())?
+            .handle(Command::Queue {
+                url: serving.track_variation.tokened_url.clone(),
+                length: Duration::from_secs(length),
+            })
+            .map_err(|e| e.to_string())
+    }
+
+    /// Fire a lifecycle hook. Used by the daemon tick for timer phases.
+    pub fn fire_hook(&self, event: &hooks::Event) {
+        self.hooks.fire(event);
     }
 
     pub fn timer_phase(&self) -> String {

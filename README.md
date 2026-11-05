@@ -70,7 +70,17 @@ busctl --user call dev.marcford.bfm /dev/marcford/bfm \
 - **MPRIS** — media keys, `playerctl -p bfm`, lock-screen widgets
 - **systemd** — `dist/bfmd.service`, D-Bus activated, hardened
 - **waybar** — `dist/waybar.jsonc`; `bfm status --watch --json` streams state
-- **Hooks** — run a command on session start/end and timer phase changes
+- **Hooks** — run a command on session start/end, track start, and timer
+  phase changes; event data arrives in the environment. See
+  [`dist/config.example.toml`](dist/config.example.toml)
+
+```toml
+# ~/.config/bfm/config.toml
+[hooks]
+session_start = "makoctl mode -a dnd"
+session_end   = "makoctl mode -r dnd"
+timer_phase   = "notify-send bfm \"$BFM_TIMER_PHASE\""
+```
 
 ## Building
 

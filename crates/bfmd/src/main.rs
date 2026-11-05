@@ -7,7 +7,7 @@
 //!
 //! See `docs/architecture.md`.
 
-use bfmd::{iface, store};
+use bfmd::{hooks, iface, mpris, store};
 
 use std::time::Duration;
 
@@ -17,8 +17,9 @@ use zbus::connection;
 
 use crate::iface::BrainFm;
 
-/// Timer resolution. A second is plenty: nothing here is sub-second, and a
-/// tighter tick would just wake the CPU for no one's benefit.
+/// Tick resolution. The audio engine reports position about four times a
+/// second, so draining it on a one-second cadence keeps `Position` accurate
+/// to the second without waking the CPU needlessly.
 const TICK: Duration = Duration::from_secs(1);
 
 #[tokio::main]
@@ -46,6 +47,11 @@ async fn main() -> Result<()> {
     let conn = connection::Builder::session()
         .name(BUS_NAME)
         .serve_at(OBJECT_PATH, BrainFm::new(store::open(), player))
+        // MPRIS buys media keys, playerctl and lock-screen widgets for state
+        // the daemon already has. A connection can own several names.
+        .name(bfm_proto::MPRIS_BUS_NAME)
+        .serve_at(mpris::MPRIS_PATH, mpris::Root)
+        .serve_at(mpris::MPRIS_PATH, mpris::Player)
         .build()
         .await
         .wrap_err(
@@ -58,13 +64,15 @@ async fn main() -> Result<()> {
         path = OBJECT_PATH,
         interface = bfm_proto::INTERFACE,
         version = INTERFACE_VERSION,
+        mpris = bfm_proto::MPRIS_BUS_NAME,
         "serving"
     );
 
     tick_timer_forever(&conn).await
 }
 
-/// Advance the timer once a second, emitting a signal only on a phase change.
+/// Drain the audio engine and advance the timer once a second, emitting
+/// signals only on real changes.
 async fn tick_timer_forever(conn: &zbus::Connection) -> Result<()> {
     let iface_ref = conn
         .object_server()
@@ -78,6 +86,10 @@ async fn tick_timer_forever(conn: &zbus::Connection) -> Result<()> {
 
         let emitter = iface_ref.signal_emitter();
         let mut iface = iface_ref.get_mut().await;
+
+        // Drain the audio engine first: it drives position, track changes and
+        // the gapless prefetch.
+        iface.pump(emitter).await;
 
         let Some(phase) = iface.tick_timer(TICK) else {
             // Still mid-phase. Refresh the property so a status bar counting
@@ -94,6 +106,10 @@ async fn tick_timer_forever(conn: &zbus::Connection) -> Result<()> {
         if let Err(e) = BrainFm::timer_phase_changed(emitter, phase.as_str(), remaining).await {
             tracing::warn!(error = %e, "could not emit TimerPhaseChanged");
         }
+        iface.fire_hook(&hooks::Event::TimerPhase {
+            phase: phase.as_str().to_owned(),
+            remaining,
+        });
 
         // A finished timer ends the session - that is the whole point of
         // setting one.
@@ -101,6 +117,9 @@ async fn tick_timer_forever(conn: &zbus::Connection) -> Result<()> {
             iface.playback = "idle";
             iface.timer = None;
             let _ = BrainFm::session_ended(emitter, "timer-elapsed").await;
+            iface.fire_hook(&hooks::Event::SessionEnd {
+                reason: "timer-elapsed".into(),
+            });
             let _ = iface.state_changed(emitter).await;
         }
         let _ = iface.timer_changed(emitter).await;

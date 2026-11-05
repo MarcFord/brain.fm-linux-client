@@ -33,6 +33,28 @@ impl TokenRotation {
     }
 }
 
+/// Read the API's error envelope (`{status, messages}`) off a failed response.
+///
+/// A 429 arrives with an empty, non-JSON body, so an unparseable body here is
+/// expected and must not be reported as a schema change.
+async fn rejection(res: reqwest::Response) -> ApiError {
+    let status = res.status().as_u16();
+    let bytes = match res.bytes().await {
+        Ok(b) => b,
+        Err(e) => return ApiError::Transport(e),
+    };
+    match serde_json::from_slice::<ErrorEnvelope>(&bytes) {
+        Ok(env) => ApiError::Rejected {
+            status,
+            messages: env.lines(),
+        },
+        Err(_) => ApiError::Rejected {
+            status,
+            messages: Vec::new(),
+        },
+    }
+}
+
 pub struct Client {
     http: reqwest::Client,
     token: Option<SessionToken>,
@@ -96,6 +118,7 @@ impl Client {
                     .and_then(|v| v.parse().ok());
                 return Err(ApiError::RateLimited { retry_after_secs });
             }
+            StatusCode::UNPROCESSABLE_ENTITY => return Err(rejection(res).await),
             s if !s.is_success() => return Err(ApiError::Http { status: s.as_u16() }),
             _ => {}
         }
@@ -209,8 +232,23 @@ impl Client {
             .send()
             .await?;
 
-        if res.status() == StatusCode::UNAUTHORIZED || res.status() == StatusCode::BAD_REQUEST {
-            return Err(ApiError::Unauthenticated);
+        match res.status() {
+            // 422 covers bad credentials, a missing field and an empty body
+            // alike - the status does not distinguish them.
+            StatusCode::UNPROCESSABLE_ENTITY => return Err(rejection(res).await),
+            // Arrives after only a handful of rapid attempts, with an empty
+            // body. Back off; do not retry in a loop.
+            StatusCode::TOO_MANY_REQUESTS => {
+                let retry_after_secs = res
+                    .headers()
+                    .get(reqwest::header::RETRY_AFTER)
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|v| v.parse().ok());
+                return Err(ApiError::RateLimited { retry_after_secs });
+            }
+            StatusCode::UNAUTHORIZED => return Err(ApiError::Unauthenticated),
+            s if !s.is_success() => return Err(ApiError::Http { status: s.as_u16() }),
+            _ => {}
         }
 
         let bytes = res.bytes().await?;

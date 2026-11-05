@@ -19,6 +19,16 @@ pub enum ApiError {
     })]
     RateLimited { retry_after_secs: Option<u64> },
 
+    /// The API rejected the request with its error envelope (`{status, messages}`).
+    /// `email-login` answers 422 for bad credentials, a missing field and an
+    /// empty body alike, so the status alone does not tell you which.
+    #[error("the API rejected the request ({status}){}", if .messages.is_empty() {
+        String::new()
+    } else {
+        format!(": {}", .messages.join("; "))
+    })]
+    Rejected { status: u16, messages: Vec<String> },
+
     #[error("api returned HTTP {status}")]
     Http { status: u16 },
 
@@ -45,6 +55,7 @@ impl ApiError {
     /// True when the caller should prompt for a fresh login rather than retry.
     pub fn needs_login(&self) -> bool {
         matches!(self, Self::Unauthenticated | Self::MalformedToken)
+            || matches!(self, Self::Rejected { status: 422, .. })
     }
 }
 

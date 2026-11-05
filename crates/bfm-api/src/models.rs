@@ -21,6 +21,31 @@ pub struct Envelope<T> {
     pub token: Option<String>,
 }
 
+/// Error responses use a **different** envelope: `messages`, not `result`.
+///
+/// Observed on `POST /v2/auth/email-login`, which answers `422` for bad
+/// credentials, a missing field and an empty body alike. Modelling every
+/// response as [`Envelope`] will fail to deserialize these.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ErrorEnvelope {
+    pub status: u32,
+    #[serde(default)]
+    pub messages: Vec<serde_json::Value>,
+}
+
+impl ErrorEnvelope {
+    /// Human-readable lines, for surfacing to the user.
+    pub fn lines(&self) -> Vec<String> {
+        self.messages
+            .iter()
+            .map(|v| match v.as_str() {
+                Some(s) => s.to_owned(),
+                None => v.to_string(),
+            })
+            .collect()
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MentalState {
@@ -199,5 +224,22 @@ mod tests {
         let tv: TrackVariation = serde_json::from_str(j).unwrap();
         assert_eq!(tv.length_in_seconds, 1800.0);
         assert_eq!(tv.loggable_url(), "https://audio2.brain.fm/x.mp3?<signed>");
+    }
+
+    #[test]
+    fn error_envelope_uses_messages_not_result() {
+        let j = r#"{"status":422,"messages":["Invalid credentials"]}"#;
+        let e: ErrorEnvelope = serde_json::from_str(j).unwrap();
+        assert_eq!(e.status, 422);
+        assert_eq!(e.lines(), vec!["Invalid credentials"]);
+    }
+
+    #[test]
+    fn error_envelope_does_not_parse_as_success_envelope() {
+        let j = r#"{"status":422,"messages":[]}"#;
+        assert!(
+            serde_json::from_str::<Envelope<Vec<MentalState>>>(j).is_err(),
+            "the two envelopes are genuinely different shapes"
+        );
     }
 }

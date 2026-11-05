@@ -11,7 +11,9 @@ the CLI, your status bar, and third-party plugins are all equal clients of it.
 
 ## Status
 
-Early, but the control plane is live. `bfmd` serves `dev.marcford.BrainFM1`
+Usable end to end, if rough. `bfm login` works for every sign-in provider,
+`bfm play focus` starts a session, and `bfm status --watch --json` feeds a
+status bar. The control plane is live. `bfmd` serves `dev.marcford.BrainFM1`
 on the session bus today — introspect it with
 `busctl --user introspect dev.marcford.bfm /dev/marcford/bfm` — and session
 timers work end to end over it. Playback is not wired up yet: anything needing

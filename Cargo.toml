@@ -45,7 +45,6 @@ clap_mangen = "0.2"
 color-eyre = "0.6"
 etcetera = "0.8"
 figment = { version = "0.10", features = ["toml", "env"] }
-keyring = { version = "3", features = ["linux-native"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # `proxy` (client) and `service` (server) are default features; we need both
 # and nothing else, since bfm-proto ships the proxy and bfmd the interface.

@@ -72,6 +72,17 @@ pub enum TimerPhase {
     Done,
 }
 
+/// Values accepted by `Login`'s `method` argument. Stable strings.
+pub mod auth_method {
+    /// Email and password. `identifier` is the address.
+    pub const EMAIL: &str = "email";
+    /// Consume a magic link. `secret` is the URL or bare token.
+    pub const MAGIC_LINK: &str = "magic-link";
+    /// Adopt a session token from a browser login — the route for accounts
+    /// created with Google, Apple or Facebook.
+    pub const TOKEN: &str = "token";
+}
+
 /// Error codes carried by the `Error` signal. Stable strings — clients match
 /// on these, so never repurpose one.
 pub mod error_code {
@@ -143,6 +154,21 @@ pub trait BrainFM1 {
         effort: &str,
         timer: &str,
     ) -> zbus::Result<String>;
+
+    /// Authenticate and store the resulting session token.
+    ///
+    /// `method` is one of [`auth_method`]. `secret` is the password for
+    /// `email`, the link or token for `magic-link`, and the adopted session
+    /// token for `token`.
+    ///
+    /// The daemon performs the exchange, not the caller — that is what keeps
+    /// every client equal, and it means a plugin can trigger a login too. For
+    /// `email` the password crosses the user's own session bus once and is
+    /// never stored; see `docs/auth.md`.
+    fn login(&self, method: &str, identifier: &str, secret: &str) -> zbus::Result<()>;
+
+    /// Forget the stored session token.
+    fn logout(&self) -> zbus::Result<()>;
 
     fn stop_session(&self) -> zbus::Result<()>;
     fn pause(&self) -> zbus::Result<()>;

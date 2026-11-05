@@ -7,7 +7,7 @@
 //!
 //! See `docs/architecture.md`.
 
-use bfmd::iface;
+use bfmd::{iface, store};
 
 use std::time::Duration;
 
@@ -32,9 +32,20 @@ async fn main() -> Result<()> {
         .init();
 
     // In zbus 6 only `build` is fallible; the rest of the chain returns Self.
+    // An unusable audio device must not stop the daemon from serving: the
+    // control plane, timers and `bfm login` all still work without sound, and
+    // the failure surfaces on the bus instead of at startup.
+    let player: Box<dyn bfm_player::Player> = match bfm_player::AudioEngine::spawn() {
+        Ok(engine) => Box::new(engine),
+        Err(e) => {
+            tracing::error!(error = %e, "no audio output; playback will fail");
+            Box::new(bfm_player::NullPlayer::default())
+        }
+    };
+
     let conn = connection::Builder::session()
         .name(BUS_NAME)
-        .serve_at(OBJECT_PATH, BrainFm::default())
+        .serve_at(OBJECT_PATH, BrainFm::new(store::open(), player))
         .build()
         .await
         .wrap_err(

@@ -112,6 +112,32 @@ impl Client {
         self.token.as_ref()
     }
 
+    /// Adopt a rotated token. Called whenever a response envelope carries a
+    /// replacement; see the lazy-renewal rule in `docs/api.md`.
+    pub fn set_token(&mut self, token: SessionToken) {
+        self.token = Some(token);
+    }
+
+    /// Apply a [`TokenRotation`] if the server issued one, returning the raw
+    /// token so the caller can persist it.
+    pub fn adopt_rotation(&mut self, rotation: &TokenRotation) -> Option<String> {
+        let raw = rotation.0.clone()?;
+        match SessionToken::parse(raw.clone()) {
+            Ok(t) => {
+                self.set_token(t);
+                Some(raw)
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "server sent a token we could not decode");
+                None
+            }
+        }
+    }
+
+    pub fn forget_token(&mut self) {
+        self.token = None;
+    }
+
     fn user_id(&self) -> Result<&str> {
         Ok(self
             .token

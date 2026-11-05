@@ -21,6 +21,7 @@ bfm-api.workspace = true
 bfm-player.workspace = true
 bfm-proto.workspace = true
 color-eyre.workspace = true
+keyring = "4"
 serde.workspace = true
 tokio.workspace = true
 tracing.workspace = true
@@ -28,4 +29,5 @@ tracing-subscriber.workspace = true
 zbus.workspace = true
 
 [dev-dependencies]
+base64.workspace = true
 tokio = { workspace = true, features = ["rt", "macros"] }

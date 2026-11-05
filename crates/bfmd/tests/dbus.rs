@@ -170,3 +170,109 @@ async fn get_status_returns_a_scriptable_snapshot() {
     }
     let _ = Duration::from_secs(0);
 }
+
+/// An unsigned JWT is fine here: we only ever decode the payload, never
+/// verify it. Far-future expiry so nothing tries to renew.
+fn adoptable_token() -> String {
+    use base64::Engine as _;
+    let b64 = |s: &str| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(s);
+    format!(
+        "{}.{}.{}",
+        b64(r#"{"alg":"RS256","typ":"JWT"}"#),
+        b64(r#"{"_id":"PLACEHOLDERUSERID0001","iat":1000,"exp":4102444800}"#),
+        "c2ln"
+    )
+}
+
+/// Catalog calls must refuse before reaching the network. If this ever fails
+/// it means an unauthenticated daemon is talking to api.brain.fm — which in
+/// the test suite would also mean the tests are hitting the live API.
+#[tokio::test]
+async fn catalog_requires_auth_rather_than_calling_the_api() {
+    let (conn, name) = bus_or_skip!("catalogauth");
+    let p = proxy(&conn, &name).await;
+
+    for err in [
+        p.list_mental_states().await.unwrap_err(),
+        p.list_activities("focus").await.unwrap_err(),
+        p.list_genres("focus").await.unwrap_err(),
+    ] {
+        assert!(
+            err.to_string().contains(bfm_proto::error_code::NEEDS_LOGIN),
+            "expected needs-login before any network call, got: {err}"
+        );
+    }
+}
+
+/// Adopting a browser session is the route for Google/Apple/Facebook
+/// accounts, and it must not touch the network.
+#[tokio::test]
+async fn adopting_a_token_authenticates_without_a_network_call() {
+    let (conn, name) = bus_or_skip!("adopt");
+    let p = proxy(&conn, &name).await;
+    assert!(!p.authenticated().await.unwrap());
+
+    p.login(bfm_proto::auth_method::TOKEN, "", &adoptable_token())
+        .await
+        .unwrap();
+
+    assert!(p.authenticated().await.unwrap(), "token should be adopted");
+}
+
+#[tokio::test]
+async fn logout_forgets_the_session() {
+    let (conn, name) = bus_or_skip!("logout");
+    let p = proxy(&conn, &name).await;
+
+    p.login(bfm_proto::auth_method::TOKEN, "", &adoptable_token())
+        .await
+        .unwrap();
+    assert!(p.authenticated().await.unwrap());
+
+    p.logout().await.unwrap();
+    assert!(!p.authenticated().await.unwrap());
+    assert_eq!(p.state().await.unwrap(), "idle");
+}
+
+#[tokio::test]
+async fn an_unknown_auth_method_is_rejected() {
+    let (conn, name) = bus_or_skip!("badmethod");
+    let p = proxy(&conn, &name).await;
+
+    let err = p.login("carrier-pigeon", "", "x").await.unwrap_err();
+    assert!(
+        err.to_string().contains("carrier-pigeon"),
+        "the error should name the bad method, got: {err}"
+    );
+}
+
+#[tokio::test]
+async fn a_malformed_adopted_token_is_rejected() {
+    let (conn, name) = bus_or_skip!("badtoken");
+    let p = proxy(&conn, &name).await;
+
+    assert!(
+        p.login(bfm_proto::auth_method::TOKEN, "", "not-a-jwt")
+            .await
+            .is_err()
+    );
+    assert!(!p.authenticated().await.unwrap());
+}
+
+/// Effort is validated before anything else, so a typo fails fast with a
+/// message naming the valid values.
+#[tokio::test]
+async fn an_invalid_effort_is_rejected_with_the_valid_values() {
+    let (conn, name) = bus_or_skip!("effort");
+    let p = proxy(&conn, &name).await;
+    p.login(bfm_proto::auth_method::TOKEN, "", &adoptable_token())
+        .await
+        .unwrap();
+
+    let err = p
+        .start_session("focus", "", &[], "maximum", "")
+        .await
+        .unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("low") && msg.contains("high"), "got: {msg}");
+}

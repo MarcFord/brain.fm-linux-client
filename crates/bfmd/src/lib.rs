@@ -4,4 +4,5 @@
 //! The public contract lives in `bfm-proto`; nothing here is part of it.
 
 pub mod iface;
+pub mod store;
 pub mod timer;

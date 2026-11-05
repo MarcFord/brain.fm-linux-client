@@ -47,7 +47,9 @@ etcetera = "0.8"
 figment = { version = "0.10", features = ["toml", "env"] }
 keyring = { version = "3", features = ["linux-native"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-zbus = { version = "6", default-features = false, features = ["tokio"] }
+# `proxy` (client) and `service` (server) are default features; we need both
+# and nothing else, since bfm-proto ships the proxy and bfmd the interface.
+zbus = { version = "6", default-features = false, features = ["proxy", "service", "tokio"] }
 zeroize = { version = "1", features = ["derive"] }
 wiremock = "0.6"
 

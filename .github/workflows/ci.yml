@@ -35,8 +35,9 @@ jobs:
 
       # The D-Bus surface is the product's public API, so it is tested like
       # one - against a private bus, never the developer's session bus.
+      # Without a bus these tests skip, so they must run here to mean anything.
       - name: D-Bus contract tests
-        run: dbus-run-session -- cargo test --workspace --features dbus-tests
+        run: dbus-run-session -- cargo test -p bfmd --test dbus -- --nocapture
 
   # Nothing in CI may touch the real Brain.fm API. Fixtures only.
   no-live-api:

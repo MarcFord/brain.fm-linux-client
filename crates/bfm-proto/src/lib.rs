@@ -112,3 +112,112 @@ mod tests {
         assert_eq!(PlaybackState::Buffering.as_str(), "buffering");
     }
 }
+
+/// Typed client for `dev.marcford.BrainFM1`.
+///
+/// This is the supported way to drive `bfmd` from Rust. Shell clients can use
+/// `busctl`/`gdbus` against the same interface; the D-Bus surface is the
+/// contract, and this trait is a convenience over it.
+///
+/// ```no_run
+/// # async fn demo() -> zbus::Result<()> {
+/// let conn = zbus::Connection::session().await?;
+/// let bfm = bfm_proto::BrainFM1Proxy::new(&conn).await?;
+/// bfm.start_session("focus", "", &[], "high", "50m").await?;
+/// # Ok(())
+/// # }
+/// ```
+#[zbus::proxy(
+    interface = "dev.marcford.BrainFM1",
+    default_service = "dev.marcford.bfm",
+    default_path = "/dev/marcford/bfm"
+)]
+pub trait BrainFM1 {
+    /// Start playing. Empty `activity` means the state's default; empty
+    /// `genres` means no filter. Returns the session id.
+    fn start_session(
+        &self,
+        state: &str,
+        activity: &str,
+        genres: &[&str],
+        effort: &str,
+        timer: &str,
+    ) -> zbus::Result<String>;
+
+    fn stop_session(&self) -> zbus::Result<()>;
+    fn pause(&self) -> zbus::Result<()>;
+    fn resume(&self) -> zbus::Result<()>;
+    fn skip_track(&self) -> zbus::Result<()>;
+
+    /// Set or replace the timer: `"50m"`, `"25m/5m"`, `"25m/5m x4"`, or `""`
+    /// to clear.
+    fn set_timer(&self, spec: &str) -> zbus::Result<()>;
+
+    fn list_mental_states(&self) -> zbus::Result<Vec<String>>;
+    fn list_activities(&self, state: &str) -> zbus::Result<Vec<(String, String)>>;
+    fn list_genres(&self, state: &str) -> zbus::Result<Vec<String>>;
+
+    /// One-shot snapshot, for scripts that do not want to track properties.
+    fn get_status(&self) -> zbus::Result<std::collections::HashMap<String, zbus::OwnedVariant>>;
+
+    /// Increments on every additive change within `BrainFM1`. Feature-detect
+    /// against this rather than sniffing for methods.
+    #[zbus(property)]
+    fn interface_version(&self) -> zbus::Result<u32>;
+
+    /// `idle` | `buffering` | `playing` | `paused`
+    #[zbus(property)]
+    fn state(&self) -> zbus::Result<String>;
+
+    #[zbus(property)]
+    fn mental_state(&self) -> zbus::Result<String>;
+
+    #[zbus(property)]
+    fn activity(&self) -> zbus::Result<String>;
+
+    /// Current track: `id`, `name`, `length`, `neural_effect`.
+    #[zbus(property)]
+    fn track(&self) -> zbus::Result<std::collections::HashMap<String, zbus::OwnedVariant>>;
+
+    /// Seconds into the current track.
+    #[zbus(property)]
+    fn position(&self) -> zbus::Result<u64>;
+
+    /// Timer state: `phase`, `remaining`, `cycle`, `cycles`.
+    #[zbus(property)]
+    fn timer(&self) -> zbus::Result<std::collections::HashMap<String, zbus::OwnedVariant>>;
+
+    #[zbus(property)]
+    fn authenticated(&self) -> zbus::Result<bool>;
+
+    #[zbus(property)]
+    fn volume(&self) -> zbus::Result<f64>;
+
+    #[zbus(property)]
+    fn set_volume(&self, volume: f64) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    fn session_started(&self, session_id: &str) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    fn session_ended(&self, reason: &str) -> zbus::Result<()>;
+
+    /// A new track began.
+    ///
+    /// Named `TrackStarted`, not `TrackChanged`: every property automatically
+    /// gets a `<Name>Changed` notification, so a `TrackChanged` signal would
+    /// collide with the `Track` property's own. Picking a distinct verb keeps
+    /// both available to clients.
+    #[zbus(signal)]
+    fn track_started(&self, name: &str, length: u64) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    fn timer_phase_changed(&self, phase: &str, remaining: u64) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    fn auth_state_changed(&self, authenticated: bool) -> zbus::Result<()>;
+
+    /// `code` is one of [`error_code`]; those strings are stable.
+    #[zbus(signal)]
+    fn error(&self, code: &str, message: &str) -> zbus::Result<()>;
+}

@@ -1,0 +1,10 @@
+# D-Bus service activation.
+#   install: cp dist/dev.marcford.bfm.service ~/.local/share/dbus-1/services/
+#
+# With this in place nothing needs to start bfmd: the first call to
+# dev.marcford.BrainFM1 launches it. SystemdService hands the lifecycle to
+# systemd when the user unit is installed too.
+[D-BUS Service]
+Name=dev.marcford.bfm
+Exec=/usr/bin/bfmd
+SystemdService=bfmd.service

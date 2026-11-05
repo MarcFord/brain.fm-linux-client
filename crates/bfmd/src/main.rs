@@ -1,15 +1,28 @@
 //! The bfm daemon.
 //!
-//! The daemon is the product: it owns the API session, the audio engine, the
-//! timer state machine and the hook runner, and exposes all of it on the
-//! session bus. The CLI, a status-bar module and any third-party plugin are
-//! equal clients of that interface — none is privileged.
+//! The daemon is the product: it owns the API session, the audio engine and
+//! the timer, and exposes all of it on the session bus as
+//! `dev.marcford.BrainFM1`. The CLI, a status-bar module and any third-party
+//! plugin are equal clients of that interface — none is privileged.
 //!
-//! Milestone 3 fills this in. See `docs/architecture.md`.
+//! See `docs/architecture.md`.
 
-use color_eyre::Result;
+use bfmd::iface;
 
-fn main() -> Result<()> {
+use std::time::Duration;
+
+use bfm_proto::{BUS_NAME, INTERFACE_VERSION, OBJECT_PATH};
+use color_eyre::{Result, eyre::WrapErr};
+use zbus::connection;
+
+use crate::iface::BrainFm;
+
+/// Timer resolution. A second is plenty: nothing here is sub-second, and a
+/// tighter tick would just wake the CPU for no one's benefit.
+const TICK: Duration = Duration::from_secs(1);
+
+#[tokio::main]
+async fn main() -> Result<()> {
     color_eyre::install()?;
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -18,10 +31,67 @@ fn main() -> Result<()> {
         )
         .init();
 
+    // In zbus 6 only `build` is fallible; the rest of the chain returns Self.
+    let conn = connection::Builder::session()
+        .name(BUS_NAME)
+        .serve_at(OBJECT_PATH, BrainFm::default())
+        .build()
+        .await
+        .wrap_err(
+            "could not take dev.marcford.bfm on the session bus \
+             (no desktop session, or another bfmd is already running)",
+        )?;
+
     tracing::info!(
+        bus = BUS_NAME,
+        path = OBJECT_PATH,
         interface = bfm_proto::INTERFACE,
-        version = bfm_proto::INTERFACE_VERSION,
-        "bfmd is a stub until milestone 3"
+        version = INTERFACE_VERSION,
+        "serving"
     );
-    Ok(())
+
+    tick_timer_forever(&conn).await
+}
+
+/// Advance the timer once a second, emitting a signal only on a phase change.
+async fn tick_timer_forever(conn: &zbus::Connection) -> Result<()> {
+    let iface_ref = conn
+        .object_server()
+        .interface::<_, BrainFm>(OBJECT_PATH)
+        .await
+        .wrap_err("interface vanished from the object server")?;
+
+    let mut ticker = tokio::time::interval(TICK);
+    loop {
+        ticker.tick().await;
+
+        let emitter = iface_ref.signal_emitter();
+        let mut iface = iface_ref.get_mut().await;
+
+        let Some(phase) = iface.tick_timer(TICK) else {
+            // Still mid-phase. Refresh the property so a status bar counting
+            // down stays honest, but emit no signal.
+            if iface.timer.is_some() {
+                let _ = iface.timer_changed(emitter).await;
+            }
+            continue;
+        };
+
+        let remaining = iface.timer_remaining();
+        tracing::debug!(phase = phase.as_str(), remaining, "timer phase changed");
+
+        if let Err(e) = BrainFm::timer_phase_changed(emitter, phase.as_str(), remaining).await {
+            tracing::warn!(error = %e, "could not emit TimerPhaseChanged");
+        }
+
+        // A finished timer ends the session - that is the whole point of
+        // setting one.
+        if iface.timer.as_ref().is_some_and(|t| t.is_done()) {
+            iface.playback = "idle";
+            iface.timer = None;
+            let _ = BrainFm::session_ended(emitter, "timer-elapsed").await;
+            let _ = iface.state_changed(emitter).await;
+        }
+        let _ = iface.timer_changed(emitter).await;
+    }
 }

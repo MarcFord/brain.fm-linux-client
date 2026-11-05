@@ -72,7 +72,7 @@ Properties (all read-only except Volume)
 Signals
   SessionStarted(session_id: s)
   SessionEnded(reason: s)
-  TrackChanged(track: a{sv})
+  TrackStarted(name: s, length: t)
   TimerPhaseChanged(phase: s, remaining: t)
   AuthStateChanged(authenticated: b)
   Error(code: s, message: s)
@@ -204,7 +204,7 @@ The API is undocumented and can break any Tuesday, so tests must not touch the n
 | 0 | ~~Live API verification~~ **done 2026-11-05** | Envelope, auth, renewal, catalog and track payload captured; `fixtures/catalog.json` recorded |
 | 1 | `bfm-api` | Email login, lazy token rotation, keyring storage, session create, catalog. Fully wiremock-tested |
 | 2 | ~~`bfm-player`~~ **written, unrun** | Progressive stream plays, gapless queue, volume, fade |
-| 3 | `bfmd` + `bfm-proto` | `BrainFM1` served, D-Bus activated, `StartSession`/`Stop`/status works via `busctl` |
+| 3 | ~~`bfmd` + `bfm-proto`~~ **partly done** | `BrainFM1` served and introspectable, timers work end to end, D-Bus activation shipped. `StartSession` awaits credentials (M4) |
 | 4 | `bfm` CLI | Thin client. `login`, `play`, `stop`, `status --json --watch` |
 | 5 | Desktop citizen | MPRIS, systemd unit, waybar module, completions, man page |
 | 6 | Extensibility | Timer state machine, hooks, documented plugin guide. **Omarchy plugin unblocked** |

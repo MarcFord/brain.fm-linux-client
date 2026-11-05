@@ -11,7 +11,13 @@ the CLI, your status bar, and third-party plugins are all equal clients of it.
 
 ## Status
 
-Early. Milestone 0 (mapping the private API) is complete — see
+Early, but the control plane is live. `bfmd` serves `dev.marcford.BrainFM1`
+on the session bus today — introspect it with
+`busctl --user introspect dev.marcford.bfm /dev/marcford/bfm` — and session
+timers work end to end over it. Playback is not wired up yet: anything needing
+the API answers with the stable `needs-login` code until credentials land.
+
+Milestone 0 (mapping the private API) is complete — see
 [`docs/api.md`](docs/api.md) and [`docs/auth.md`](docs/auth.md). Everything else
 is in progress; `bfmd` and `bfm` are stubs today.
 

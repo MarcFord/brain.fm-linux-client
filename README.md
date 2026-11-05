@@ -12,8 +12,15 @@ the CLI, your status bar, and third-party plugins are all equal clients of it.
 ## Status
 
 Early. Milestone 0 (mapping the private API) is complete — see
-[`docs/api.md`](docs/api.md). Everything else is in progress; `bfmd` and `bfm`
-are stubs today.
+[`docs/api.md`](docs/api.md) and [`docs/auth.md`](docs/auth.md). Everything else
+is in progress; `bfmd` and `bfm` are stubs today.
+
+**Sign-in**: accounts created with email, Google, Apple or Facebook are all
+supported. Only email/password can be driven entirely from the terminal; the
+SSO providers sign in through your real browser once, and `bfm` adopts the
+session from there. Since token renewal is lazy and non-consuming, that handoff
+is a one-time cost rather than a daily one. See [`docs/auth.md`](docs/auth.md)
+for why it has to work that way.
 
 ## Why another one
 

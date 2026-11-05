@@ -156,3 +156,110 @@ mod tests {
         assert!(SessionToken::parse("nonsense").is_err());
     }
 }
+
+/// How to obtain a session.
+///
+/// Brain.fm supports four sign-in providers plus magic links, but a CLI can
+/// only drive some of them directly — see `docs/auth.md` for why the SSO
+/// providers are absent. Every variant here ends in the same place: a
+/// [`SessionToken`].
+#[derive(Debug)]
+pub enum AuthMethod {
+    /// `POST /v2/auth/email-login`. The only fully self-service method.
+    Email { email: String, password: Password },
+
+    /// `GET /v2/auth/magic-link/{token}`. Consume-only: nothing can request a
+    /// link, so this is for when the user already has one.
+    MagicLink { token: String },
+
+    /// A session token lifted from an existing browser login.
+    ///
+    /// This is how SSO accounts (Google, Apple, Facebook) are supported: the
+    /// provider login happens in a real browser against Brain.fm's own web
+    /// app, and we adopt the resulting session. Because renewal is lazy and
+    /// non-consuming, one handoff sustains the session indefinitely.
+    ExistingToken { raw: String },
+}
+
+impl AuthMethod {
+    /// Extract the token from a magic-link URL, or accept a bare token.
+    ///
+    /// Accepts the full link the user was emailed as well as just its last
+    /// path segment, because people paste both.
+    pub fn magic_link(input: &str) -> Result<Self> {
+        let input = input.trim();
+        let token = input
+            .rsplit('/')
+            .find(|seg| !seg.is_empty())
+            .unwrap_or(input)
+            // tolerate a trailing query or fragment
+            .split(['?', '#'])
+            .next()
+            .unwrap_or("");
+
+        if token.is_empty() {
+            return Err(ApiError::BadTokenEncoding(
+                "no token found in the magic link".into(),
+            ));
+        }
+        Ok(Self::MagicLink {
+            token: token.to_owned(),
+        })
+    }
+
+    /// Human-readable name, for logs and error messages. Never includes
+    /// credentials.
+    pub fn describe(&self) -> &'static str {
+        match self {
+            Self::Email { .. } => "email and password",
+            Self::MagicLink { .. } => "magic link",
+            Self::ExistingToken { .. } => "existing browser session",
+        }
+    }
+}
+
+#[cfg(test)]
+mod auth_method_tests {
+    use super::*;
+
+    #[test]
+    fn magic_link_accepts_a_full_url() {
+        let m = AuthMethod::magic_link("https://my.brain.fm/auth/magic-link/abc123").unwrap();
+        assert!(matches!(m, AuthMethod::MagicLink { ref token } if token == "abc123"));
+    }
+
+    #[test]
+    fn magic_link_accepts_a_bare_token() {
+        let m = AuthMethod::magic_link("abc123").unwrap();
+        assert!(matches!(m, AuthMethod::MagicLink { ref token } if token == "abc123"));
+    }
+
+    #[test]
+    fn magic_link_tolerates_trailing_slash_and_query() {
+        for input in [
+            "https://my.brain.fm/auth/magic-link/abc123/",
+            "https://my.brain.fm/auth/magic-link/abc123?utm_source=email",
+        ] {
+            let m = AuthMethod::magic_link(input).unwrap();
+            assert!(
+                matches!(m, AuthMethod::MagicLink { ref token } if token == "abc123"),
+                "{input}"
+            );
+        }
+    }
+
+    #[test]
+    fn magic_link_rejects_empty_input() {
+        assert!(AuthMethod::magic_link("   ").is_err());
+    }
+
+    #[test]
+    fn describe_never_leaks_credentials() {
+        let m = AuthMethod::Email {
+            email: "a@b.c".into(),
+            password: Password::new("hunter2"),
+        };
+        assert_eq!(m.describe(), "email and password");
+        assert!(!format!("{:?}", m).contains("hunter2"));
+    }
+}

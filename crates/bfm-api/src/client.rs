@@ -15,7 +15,7 @@ use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{
     API_V2, API_V3, WEB_ORIGIN,
-    auth::SessionToken,
+    auth::{AuthMethod, SessionToken},
     error::{ApiError, Result},
     models::*,
 };
@@ -53,6 +53,20 @@ async fn rejection(res: reqwest::Response) -> ApiError {
             messages: Vec::new(),
         },
     }
+}
+
+/// Pull a session token out of an auth response.
+///
+/// The success shape is unverified (our capture account is Google-linked), so
+/// accept it at the envelope root or under `result`, which is where the two
+/// plausible shapes put it.
+fn token_from(env: &Envelope<serde_json::Value>) -> Option<String> {
+    env.token.clone().or_else(|| {
+        env.result
+            .get("token")
+            .and_then(|v| v.as_str())
+            .map(str::to_owned)
+    })
 }
 
 pub struct Client {
@@ -206,6 +220,55 @@ impl Client {
 
     // ---- auth ----
 
+    /// Obtain a session by whichever method suits the account.
+    ///
+    /// All providers converge here. SSO accounts arrive as
+    /// [`AuthMethod::ExistingToken`] because we cannot drive Google, Apple or
+    /// Facebook OAuth ourselves — see `docs/auth.md`.
+    pub async fn login(&self, method: AuthMethod) -> Result<SessionToken> {
+        match method {
+            AuthMethod::Email { email, password } => self.email_login(&email, &password).await,
+            AuthMethod::MagicLink { token } => self.consume_magic_link(&token).await,
+            // Nothing to exchange: validate it parses, and let the first API
+            // call be the real test of whether it is live.
+            AuthMethod::ExistingToken { raw } => SessionToken::parse(raw),
+        }
+    }
+
+    /// Consume a magic link.
+    ///
+    /// Note this is a **GET**, and that nothing can request a link — the web
+    /// app only ever consumes them. *(Unverified against the live API.)*
+    pub async fn consume_magic_link(&self, token: &str) -> Result<SessionToken> {
+        let res = self
+            .http
+            .get(format!("{API_V2}/auth/magic-link/{token}"))
+            .send()
+            .await?;
+
+        match res.status() {
+            StatusCode::UNPROCESSABLE_ENTITY => return Err(rejection(res).await),
+            StatusCode::TOO_MANY_REQUESTS => {
+                return Err(ApiError::RateLimited {
+                    retry_after_secs: None,
+                });
+            }
+            StatusCode::UNAUTHORIZED | StatusCode::NOT_FOUND => {
+                return Err(ApiError::Unauthenticated);
+            }
+            s if !s.is_success() => return Err(ApiError::Http { status: s.as_u16() }),
+            _ => {}
+        }
+
+        let bytes = res.bytes().await?;
+        let env: Envelope<serde_json::Value> =
+            serde_json::from_slice(&bytes).map_err(|source| ApiError::SchemaChanged {
+                context: "magic-link",
+                source,
+            })?;
+        SessionToken::parse(token_from(&env).ok_or(ApiError::Unauthenticated)?)
+    }
+
     /// Log in with email and password.
     ///
     /// NOTE: the request/response bodies are **unverified** — the capture
@@ -258,16 +321,42 @@ impl Client {
                 source,
             })?;
 
-        let raw = env
-            .token
-            .or_else(|| {
-                env.result
-                    .get("token")
-                    .and_then(|v| v.as_str())
-                    .map(str::to_owned)
-            })
-            .ok_or(ApiError::Unauthenticated)?;
+        SessionToken::parse(token_from(&env).ok_or(ApiError::Unauthenticated)?)
+    }
+}
 
-        SessionToken::parse(raw)
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn env(json: &str) -> Envelope<serde_json::Value> {
+        serde_json::from_str(json).unwrap()
+    }
+
+    #[test]
+    fn token_at_envelope_root_is_found() {
+        assert_eq!(
+            token_from(&env(r#"{"status":200,"result":{},"token":"a.b.c"}"#)).as_deref(),
+            Some("a.b.c")
+        );
+    }
+
+    #[test]
+    fn token_nested_under_result_is_found() {
+        assert_eq!(
+            token_from(&env(r#"{"status":200,"result":{"token":"a.b.c"}}"#)).as_deref(),
+            Some("a.b.c")
+        );
+    }
+
+    #[test]
+    fn root_token_wins_over_nested() {
+        let e = env(r#"{"status":200,"result":{"token":"nested"},"token":"root"}"#);
+        assert_eq!(token_from(&e).as_deref(), Some("root"));
+    }
+
+    #[test]
+    fn absent_token_is_none() {
+        assert!(token_from(&env(r#"{"status":200,"result":{}}"#)).is_none());
     }
 }

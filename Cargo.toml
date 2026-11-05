@@ -29,10 +29,8 @@ thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "signal"] }
 tracing = "0.1"
 
-# NOTE: the versions below could not be resolved offline during scaffolding.
-# Run `cargo update` on first build and pin anything that drifts.
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
-base64 = "0.22"
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-tls", "stream"] }
+base64 = "0.23"
 clap = { version = "4", features = ["derive", "env"] }
 clap_complete = "4"
 clap_mangen = "0.2"
@@ -41,7 +39,7 @@ etcetera = "0.8"
 figment = { version = "0.10", features = ["toml", "env"] }
 keyring = { version = "3", features = ["linux-native"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-zbus = { version = "5", default-features = false, features = ["tokio"] }
+zbus = { version = "6", default-features = false, features = ["tokio"] }
 zeroize = { version = "1", features = ["derive"] }
 wiremock = "0.6"
 

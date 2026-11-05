@@ -408,3 +408,23 @@ async fn mpris_root_identifies_itself() {
     assert!(!root.get_property::<bool>("CanQuit").await.unwrap());
     assert!(!root.get_property::<bool>("HasTrackList").await.unwrap());
 }
+
+/// Version 2 added this. A client that feature-detects on InterfaceVersion
+/// must find the method actually present when the number says so.
+#[tokio::test]
+async fn session_lengths_exist_at_interface_version_2() {
+    let (conn, name) = bus_or_skip!("lengths");
+    let p = proxy(&conn, &name).await;
+
+    assert!(
+        p.interface_version().await.unwrap() >= 2,
+        "ListSessionLengths requires interface version 2"
+    );
+    // Unauthenticated, so it must refuse rather than reach the network —
+    // but refusing proves the method is served.
+    let err = p.list_session_lengths("focus").await.unwrap_err();
+    assert!(
+        err.to_string().contains(bfm_proto::error_code::NEEDS_LOGIN),
+        "expected needs-login, got: {err}"
+    );
+}

@@ -45,6 +45,11 @@ pub struct Track {
     pub name: String,
     pub length: u64,
     pub neural_effect: f64,
+    /// Remote artwork URL, for reference.
+    pub image_url: String,
+    /// Local file the daemon has already cached. Front-ends load this and
+    /// never fetch anything themselves.
+    pub art_path: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -86,6 +91,16 @@ pub struct State {
 }
 
 impl State {
+    /// Cached artwork to render behind the player, if the daemon has any.
+    ///
+    /// Checks the file still exists: the cache lives under `XDG_CACHE_HOME`
+    /// and can be swept at any time, and a missing path would otherwise show
+    /// as a blank panel.
+    pub fn art_file(&self) -> Option<&str> {
+        let p = self.track.as_ref().map(|t| t.art_path.as_str())?;
+        (!p.is_empty() && std::path::Path::new(p).is_file()).then_some(p)
+    }
+
     /// Progress through the current track, `0.0..=1.0`.
     pub fn track_fraction(&self) -> f64 {
         match &self.track {
@@ -146,6 +161,8 @@ pub fn track_from(m: &HashMap<String, OwnedVariant>) -> Option<Track> {
         name,
         length: var_u64(m, "length").unwrap_or(0),
         neural_effect: var_f64(m, "neural_effect").unwrap_or(0.0),
+        image_url: var_str(m, "image_url").unwrap_or_default(),
+        art_path: var_str(m, "art_path").unwrap_or_default(),
     })
 }
 
@@ -216,6 +233,56 @@ mod tests {
         let t = track_from(&m).unwrap();
         assert_eq!(t.name, "Topography");
         assert_eq!(t.length, 1800);
+    }
+
+    #[test]
+    fn artwork_fields_parse_when_present() {
+        let m = map(&[
+            ("name", Variant::from("Topography")),
+            ("image_url", Variant::from("https://cdn.brain.fm/a.webp")),
+            ("art_path", Variant::from("/tmp/does-not-exist.webp")),
+        ]);
+        let t = track_from(&m).unwrap();
+        assert_eq!(t.image_url, "https://cdn.brain.fm/a.webp");
+        assert_eq!(t.art_path, "/tmp/does-not-exist.webp");
+    }
+
+    /// An older daemon sends no artwork keys at all; that must parse, not
+    /// blank the track.
+    #[test]
+    fn a_track_without_artwork_still_parses() {
+        let m = map(&[("name", Variant::from("Topography"))]);
+        let t = track_from(&m).unwrap();
+        assert!(t.art_path.is_empty());
+    }
+
+    /// A swept cache leaves a path pointing at nothing. Rendering that as
+    /// artwork would show an empty panel.
+    #[test]
+    fn a_vanished_cache_file_is_not_offered_as_art() {
+        let s = State {
+            track: Some(Track {
+                art_path: "/definitely/not/here.webp".into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert!(s.art_file().is_none());
+    }
+
+    #[test]
+    fn a_real_cache_file_is_offered_as_art() {
+        let f = std::env::temp_dir().join(format!("bfm-art-{}.webp", std::process::id()));
+        std::fs::write(&f, b"not really an image").unwrap();
+        let s = State {
+            track: Some(Track {
+                art_path: f.to_string_lossy().into_owned(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert!(s.art_file().is_some());
+        std::fs::remove_file(&f).ok();
     }
 
     #[test]

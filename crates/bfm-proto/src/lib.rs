@@ -25,7 +25,14 @@ pub const OBJECT_PATH: &str = "/dev/marcford/bfm";
 /// The domain interface. Major version is part of the name.
 pub const INTERFACE: &str = "dev.marcford.BrainFM1";
 /// Bumped on every additive change within `BrainFM1`.
-pub const INTERFACE_VERSION: u32 = 1;
+///
+/// * 1 — initial surface.
+/// * 2 — added `ListSessionLengths`, so a client can offer the durations the
+///   service itself suggests for a state instead of inventing its own.
+/// * 3 — `Track` gained `image_url` and `art_path`. Adding keys to an
+///   existing `a{sv}` is additive: the signature is unchanged and older
+///   clients simply ignore them.
+pub const INTERFACE_VERSION: u32 = 3;
 
 /// MPRIS bus name, for `playerctl -p bfm` and media keys.
 pub const MPRIS_BUS_NAME: &str = "org.mpris.MediaPlayer2.bfm";
@@ -183,6 +190,14 @@ pub trait BrainFM1 {
     fn list_activities(&self, state: &str) -> zbus::Result<Vec<(String, String)>>;
     fn list_genres(&self, state: &str) -> zbus::Result<Vec<String>>;
 
+    /// Durations the service suggests for a state, as `(seconds, label)`.
+    ///
+    /// Added in interface version 2; check [`INTERFACE_VERSION`] before
+    /// relying on it. Sensible lengths differ enormously by state — a sleep
+    /// session is nine hours, a focus session ninety minutes — so a client
+    /// that hard-codes one list is wrong for both.
+    fn list_session_lengths(&self, state: &str) -> zbus::Result<Vec<(u32, String)>>;
+
     /// One-shot snapshot, for scripts that do not want to track properties.
     fn get_status(&self) -> zbus::Result<std::collections::HashMap<String, zbus::OwnedVariant>>;
 
@@ -201,7 +216,9 @@ pub trait BrainFM1 {
     #[zbus(property)]
     fn activity(&self) -> zbus::Result<String>;
 
-    /// Current track: `id`, `name`, `length`, `neural_effect`.
+    /// Current track: `id`, `name`, `length`, `neural_effect`, and since
+    /// interface version 3 `image_url` plus `art_path` — a local file the
+    /// daemon has already cached, so a front-end need not fetch anything.
     #[zbus(property)]
     fn track(&self) -> zbus::Result<std::collections::HashMap<String, zbus::OwnedVariant>>;
 

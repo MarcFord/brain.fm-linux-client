@@ -28,6 +28,9 @@ pub struct TrackInfo {
     pub name: String,
     pub length: u64,
     pub neural_effect: f64,
+    pub image_url: String,
+    /// Local cache path, empty when there is no art or the fetch failed.
+    pub art_path: String,
 }
 
 /// Runtime state behind the interface.
@@ -243,11 +246,18 @@ impl BrainFm {
         self.activity = activity_id.clone();
         self.playback = "buffering";
         self.position = 0;
+        let image_url = serving.track.image_url.clone().unwrap_or_default();
+        let art_path = crate::art::ensure(&self.api, &image_url)
+            .await
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_default();
         self.track = Some(TrackInfo {
             id: serving.track.id.clone(),
             name: serving.track.name.clone(),
             length,
             neural_effect: serving.track_variation.neural_effect_level.unwrap_or(0.0),
+            image_url,
+            art_path,
         });
         let _ = self.state_changed(&emitter).await;
         let _ = self.mental_state_changed(&emitter).await;
@@ -341,11 +351,18 @@ impl BrainFm {
             url: serving.track_variation.tokened_url.clone(),
             length: Duration::from_secs(length),
         })?;
+        let image_url = serving.track.image_url.clone().unwrap_or_default();
+        let art_path = crate::art::ensure(&self.api, &image_url)
+            .await
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_default();
         self.track = Some(TrackInfo {
             id: serving.track.id.clone(),
             name: serving.track.name.clone(),
             length,
             neural_effect: serving.track_variation.neural_effect_level.unwrap_or(0.0),
+            image_url,
+            art_path,
         });
         self.position = 0;
 
@@ -396,6 +413,24 @@ impl BrainFm {
         let mut all = g.base_genre_names;
         all.extend(g.nature_genre_names);
         Ok(all)
+    }
+
+    /// Durations the service suggests for this state. Interface version 2.
+    async fn list_session_lengths(&mut self, state: &str) -> zbus::fdo::Result<Vec<(u32, String)>> {
+        self.require_auth()?;
+        let (states, rot) = self.api.mental_states().await.map_err(api_error)?;
+        self.persist_rotation(&rot);
+
+        Ok(states
+            .into_iter()
+            .find(|s| s.id == state)
+            .map(|s| {
+                s.default_session_lengths
+                    .into_iter()
+                    .map(|l| (l.length_in_seconds, l.display_value))
+                    .collect()
+            })
+            .unwrap_or_default())
     }
 
     /// One-shot snapshot, for scripts that would rather not track properties.
@@ -483,6 +518,8 @@ impl BrainFm {
         put("name", Variant::from(t.name.clone()));
         put("length", Variant::from(t.length));
         put("neural_effect", Variant::from(t.neural_effect));
+        put("image_url", Variant::from(t.image_url.clone()));
+        put("art_path", Variant::from(t.art_path.clone()));
         m
     }
 

@@ -1,6 +1,8 @@
 //! The window.
 
-use bfm_ui_core::{Client, Command, Playback, State, Update, format_duration, needs_login};
+use bfm_ui_core::{
+    Client, Command, Playback, SessionMode, State, Update, format_duration, needs_login,
+};
 use relm4::{
     ComponentParts, ComponentSender, RelmWidgetExt, SimpleComponent,
     adw::{self, prelude::*},
@@ -30,6 +32,11 @@ pub struct App {
     connected: bool,
     error: Option<String>,
     effort: &'static str,
+    /// How long the next session should run. Applied immediately when one is
+    /// already playing, so the control means the same thing on both pages.
+    mode: SessionMode,
+    /// Kept so a transient dialog has something to be presented on.
+    window: adw::ApplicationWindow,
     /// Set once the view has been built and the stack has its pages.
     stack_ready: bool,
 }
@@ -43,8 +50,8 @@ pub enum Msg {
     Stop,
     SignIn,
     Volume(f64),
-    Pomodoro,
-    ClearTimer,
+    OpenModeDialog,
+    SetMode(SessionMode),
     DismissError,
 }
 
@@ -66,6 +73,14 @@ impl SimpleComponent for App {
                         set_title: "Brain.fm",
                         #[watch]
                         set_subtitle: &model.subtitle(),
+                    },
+
+                    pack_end = &gtk::Button {
+                        set_icon_name: "alarm-symbolic",
+                        set_tooltip_text: Some("Session length"),
+                        #[watch]
+                        set_visible: model.connected && model.state.authenticated,
+                        connect_clicked => Msg::OpenModeDialog,
                     },
                 },
 
@@ -145,6 +160,19 @@ impl SimpleComponent for App {
                                     set_margin_all: 16,
 
                                     adw::PreferencesGroup {
+                                        adw::ActionRow {
+                                            set_title: "Session length",
+                                            #[watch]
+                                            set_subtitle: &model.mode.to_string(),
+                                            set_activatable: true,
+                                            add_suffix = &gtk::Image {
+                                                set_icon_name: Some("go-next-symbolic"),
+                                            },
+                                            connect_activated => Msg::OpenModeDialog,
+                                        },
+                                    },
+
+                                    adw::PreferencesGroup {
                                         set_title: "Start a session",
 
                                         #[name = "state_rows"]
@@ -155,9 +183,31 @@ impl SimpleComponent for App {
                         },
 
                         // ---- playing ----
-                        add_named[Some("player")] = &adw::Clamp {
-                            set_maximum_size: 420,
-                            gtk::Box {
+                        //
+                        // The track's own artwork sits behind the controls,
+                        // the way the web player does it. A scrim keeps text
+                        // legible over whatever image arrives — they range
+                        // from near-black to washed-out, so readability
+                        // cannot be left to luck.
+                        add_named[Some("player")] = &gtk::Overlay {
+                            #[name = "art"]
+                            gtk::Picture {
+                                set_content_fit: gtk::ContentFit::Cover,
+                                set_can_shrink: true,
+                                #[watch]
+                                set_filename: model.state.art_file(),
+                                #[watch]
+                                set_visible: model.state.art_file().is_some(),
+                            },
+
+                            add_overlay = &gtk::Box {
+                                #[watch]
+                                set_css_classes: model.scrim_classes(),
+
+                                adw::Clamp {
+                                set_maximum_size: 420,
+                                set_hexpand: true,
+                                gtk::Box {
                                 set_orientation: gtk::Orientation::Vertical,
                                 set_spacing: 16,
                                 set_margin_all: 24,
@@ -231,22 +281,17 @@ impl SimpleComponent for App {
                                 adw::PreferencesGroup {
                                     set_margin_top: 8,
                                     adw::ActionRow {
-                                        set_title: "Timer",
+                                        set_title: "Session length",
                                         #[watch]
                                         set_subtitle: &model.timer_label(),
-                                        add_suffix = &gtk::Button {
-                                            #[watch]
-                                            set_label: if model.state.timer.is_running() {
-                                                "Clear"
-                                            } else {
-                                                "25/5"
-                                            },
-                                            set_valign: gtk::Align::Center,
-                                            connect_clicked[sender, model_running = model.state.timer.is_running()] => move |_| {
-                                                sender.input(if model_running { Msg::ClearTimer } else { Msg::Pomodoro });
-                                            },
+                                        set_activatable: true,
+                                        add_suffix = &gtk::Image {
+                                            set_icon_name: Some("go-next-symbolic"),
                                         },
+                                        connect_activated => Msg::OpenModeDialog,
                                     },
+                                },
+                                },
                                 },
                             },
                         },
@@ -280,12 +325,31 @@ impl SimpleComponent for App {
 
         let model = App {
             client,
+            window: root.clone(),
+            mode: SessionMode::default(),
             state: State::default(),
             connected: false,
             error: None,
             effort: "high",
             stack_ready: false,
         };
+
+        // Loaded once. The gradient is heavier at the bottom, where the
+        // controls sit, and lighter at the top where the title is.
+        relm4::set_global_css(
+            "
+            .bfm-scrim {
+                background: linear-gradient(
+                    to bottom,
+                    alpha(black, 0.45) 0%,
+                    alpha(black, 0.72) 55%,
+                    alpha(black, 0.88) 100%
+                );
+            }
+            .bfm-scrim label { color: #ffffff; }
+            .bfm-scrim label.dim-label { color: alpha(#ffffff, 0.72); }
+            ",
+        );
 
         let widgets = view_output!();
 
@@ -317,7 +381,7 @@ impl SimpleComponent for App {
         ComponentParts { model, widgets }
     }
 
-    fn update(&mut self, msg: Self::Input, _sender: ComponentSender<Self>) {
+    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
         match msg {
             Msg::FromDaemon(u) => match *u {
                 Update::State(s) => {
@@ -347,7 +411,7 @@ impl SimpleComponent for App {
                 activity: String::new(),
                 genres: Vec::new(),
                 effort: self.effort.to_owned(),
-                timer: String::new(),
+                timer: self.mode.to_spec(),
             }),
             Msg::PlayPause => self.client.send(if self.state.playback.toggles_to_play() {
                 Command::Resume
@@ -357,9 +421,18 @@ impl SimpleComponent for App {
             Msg::Skip => self.client.send(Command::Skip),
             Msg::Stop => self.client.send(Command::Stop),
             Msg::Volume(v) => self.client.send(Command::SetVolume(v)),
-            Msg::Pomodoro => self.client.send(Command::SetTimer("25m/5m x4".into())),
-            Msg::ClearTimer => self.client.send(Command::SetTimer(String::new())),
             Msg::DismissError => self.error = None,
+
+            Msg::OpenModeDialog => present_mode_dialog(&self.window, self.mode, &sender),
+
+            Msg::SetMode(mode) => {
+                self.mode = mode;
+                // If something is already playing, the choice should take
+                // effect now rather than at the next session.
+                if self.state.playback != Playback::Idle {
+                    self.client.send(Command::SetTimer(mode.to_spec()));
+                }
+            }
 
             Msg::SignIn => match bfm_ui_core::find_session() {
                 Some(found) => {
@@ -381,6 +454,15 @@ impl SimpleComponent for App {
 }
 
 impl App {
+    /// Only dim when there is actually an image behind the controls.
+    fn scrim_classes(&self) -> &'static [&'static str] {
+        if self.state.art_file().is_some() {
+            &["bfm-scrim"]
+        } else {
+            &[]
+        }
+    }
+
     /// `None` on the very first pass, before the stack has its children.
     fn page_if_ready(&self) -> Option<&'static str> {
         self.stack_ready.then(|| self.page())
@@ -450,7 +532,7 @@ impl App {
     fn timer_label(&self) -> String {
         let t = &self.state.timer;
         if !t.is_running() {
-            return "Off".to_owned();
+            return format!("{} · running until stopped", self.mode);
         }
         let phase = title_case(&t.phase);
         if t.cycles > 1 {
@@ -493,4 +575,120 @@ fn setup_layer_shell(window: &adw::ApplicationWindow) {
     window.set_margin(Edge::Top, 12);
     window.set_margin(Edge::Right, 12);
     window.set_keyboard_mode(gtk4_layer_shell::KeyboardMode::OnDemand);
+}
+
+/// The session-length editor.
+///
+/// Built imperatively rather than in `view!` because it is transient and its
+/// rows depend on the selected mode. Reached from both the browse page and
+/// the player, so the control means the same thing wherever you are.
+fn present_mode_dialog(
+    parent: &adw::ApplicationWindow,
+    current: SessionMode,
+    sender: &ComponentSender<App>,
+) {
+    let page = adw::PreferencesPage::new();
+    let group = adw::PreferencesGroup::builder()
+        .title("Session length")
+        .description("Infinite plays until you stop it.")
+        .build();
+
+    let modes = gtk::StringList::new(&["Infinite", "Timer", "Intervals"]);
+    let mode_row = adw::ComboRow::builder()
+        .title("Mode")
+        .model(&modes)
+        .selected(match current {
+            SessionMode::Infinite => 0,
+            SessionMode::Timer { .. } => 1,
+            SessionMode::Intervals { .. } => 2,
+        })
+        .build();
+    group.add(&mode_row);
+
+    let minutes = adw::SpinRow::with_range(5.0, 600.0, 5.0);
+    minutes.set_title("Minutes");
+    minutes.set_value(match current {
+        SessionMode::Timer { minutes } => minutes as f64,
+        _ => 50.0,
+    });
+    group.add(&minutes);
+
+    let work = adw::SpinRow::with_range(1.0, 180.0, 5.0);
+    work.set_title("Work");
+    work.set_subtitle("Minutes of focus per cycle");
+    let rest = adw::SpinRow::with_range(1.0, 60.0, 1.0);
+    rest.set_title("Break");
+    rest.set_subtitle("Minutes between cycles");
+    let cycles = adw::SpinRow::with_range(1.0, 12.0, 1.0);
+    cycles.set_title("Cycles");
+    if let SessionMode::Intervals {
+        work: w,
+        rest: r,
+        cycles: c,
+    } = current
+    {
+        work.set_value(w as f64);
+        rest.set_value(r as f64);
+        cycles.set_value(c as f64);
+    } else {
+        work.set_value(25.0);
+        rest.set_value(5.0);
+        cycles.set_value(4.0);
+    }
+    for row in [&work, &rest, &cycles] {
+        group.add(row);
+    }
+    page.add(&group);
+
+    // Only the rows belonging to the chosen mode are shown; an infinite
+    // session has nothing to configure.
+    let sync = {
+        let (minutes, work, rest, cycles) =
+            (minutes.clone(), work.clone(), rest.clone(), cycles.clone());
+        move |selected: u32| {
+            minutes.set_visible(selected == 1);
+            for row in [&work, &rest, &cycles] {
+                row.set_visible(selected == 2);
+            }
+        }
+    };
+    sync(mode_row.selected());
+    mode_row.connect_selected_notify({
+        let sync = sync.clone();
+        move |row| sync(row.selected())
+    });
+
+    let read = {
+        let (mode_row, minutes, work, rest, cycles) = (
+            mode_row.clone(),
+            minutes.clone(),
+            work.clone(),
+            rest.clone(),
+            cycles.clone(),
+        );
+        move || match mode_row.selected() {
+            1 => SessionMode::Timer {
+                minutes: minutes.value() as u32,
+            },
+            2 => SessionMode::Intervals {
+                work: work.value() as u32,
+                rest: rest.value() as u32,
+                cycles: cycles.value() as u32,
+            },
+            _ => SessionMode::Infinite,
+        }
+    };
+
+    let dialog = adw::PreferencesDialog::builder()
+        .title("Session length")
+        .build();
+    dialog.add(&page);
+
+    // Applied on close: a preferences dialog with an OK button is not the
+    // GNOME idiom, and the choice is cheap to change.
+    dialog.connect_closed({
+        let sender = sender.clone();
+        move |_| sender.input(Msg::SetMode(read()))
+    });
+    dialog.present(Some(parent));
 }

@@ -17,6 +17,9 @@ path = "src/main.rs"
 [dependencies]
 bfm-ui-core.workspace = true
 clap.workspace = true
+# relm4 re-exports this crate; newer APIs (Picture::set_content_fit) are
+# gated behind version features. The system ships GTK 4.22.
+gtk4 = { version = "0.11", features = ["v4_22"] }
 gtk4-layer-shell = "0.8"
 # relm4 re-exports this crate; newer widgets (ToolbarView, 1.4+) are gated
 # behind version features. The system ships libadwaita 1.9.

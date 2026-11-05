@@ -10,8 +10,10 @@
 
 pub mod browser;
 pub mod client;
+pub mod mode;
 pub mod state;
 
 pub use browser::{Found, find_session};
 pub use client::{Client, Command, Update, needs_login, split_error};
+pub use mode::{SessionLength, SessionMode, fallback_lengths};
 pub use state::{IDLE_LABEL, Playback, State, Timer, Track, format_duration};

@@ -267,6 +267,30 @@ impl Client {
         Ok(self.me().await?.1)
     }
 
+    /// Fetch cover artwork from Brain.fm's CDN.
+    ///
+    /// Images only. Audio is never written to disk beyond the playback
+    /// buffer — see the retention note in the README. Capped so a surprising
+    /// response cannot balloon memory.
+    pub async fn fetch_image(&self, url: &str, max_bytes: usize) -> Result<Vec<u8>> {
+        let res = self.http.get(url).send().await?;
+        if !res.status().is_success() {
+            return Err(ApiError::Http {
+                status: res.status().as_u16(),
+            });
+        }
+        if let Some(len) = res.content_length()
+            && len as usize > max_bytes
+        {
+            return Err(ApiError::Http { status: 413 });
+        }
+        let bytes = res.bytes().await?;
+        if bytes.len() > max_bytes {
+            return Err(ApiError::Http { status: 413 });
+        }
+        Ok(bytes.to_vec())
+    }
+
     // ---- auth ----
 
     /// Obtain a session by whichever method suits the account.

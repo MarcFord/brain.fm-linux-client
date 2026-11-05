@@ -3,6 +3,7 @@
 //!
 //! The public contract lives in `bfm-proto`; nothing here is part of it.
 
+pub mod art;
 pub mod hooks;
 pub mod iface;
 pub mod mpris;

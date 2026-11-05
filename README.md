@@ -93,10 +93,18 @@ Needs ALSA headers (`libasound2-dev` / `alsa-lib`) and a session D-Bus.
 
 ## Privacy
 
+Only cover artwork is cached to disk, under `$XDG_CACHE_HOME/bfm/art`, the
+way any media player caches album art — so every front-end and every MPRIS
+consumer gets it without fetching anything itself. **Audio is never written
+to disk** beyond the in-memory/temp playback buffer, and there is deliberately
+no download or offline feature.
+
+
+
 Your password is never stored — only the session token, in the system keyring
 via Secret Service. Signed audio URLs are bearer credentials and are scrubbed
 from logs and error messages. Nothing is cached to disk beyond the playback
-buffer, and there is deliberately **no download or offline feature**.
+buffer.
 
 ## Credits
 

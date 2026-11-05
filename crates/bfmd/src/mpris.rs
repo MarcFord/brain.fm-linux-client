@@ -183,6 +183,14 @@ impl Player {
         put("mpris:length", Variant::from(t.length as i64 * 1_000_000));
         put("xesam:title", Variant::from(t.name.clone()));
         put("xesam:artist", Variant::from(vec!["Brain.fm".to_owned()]));
+        // The daemon has already cached this, so every MPRIS consumer gets
+        // artwork without fetching anything itself.
+        if !t.art_path.is_empty() {
+            put(
+                "mpris:artUrl",
+                Variant::from(format!("file://{}", t.art_path)),
+            );
+        }
         Ok(m)
     }
 

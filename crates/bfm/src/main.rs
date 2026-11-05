@@ -4,6 +4,8 @@
 //! this crate by design: the daemon is the product, and this binary has no
 //! privileges a third-party plugin lacks.
 
+mod browser;
+
 use bfm_proto::{BrainFM1Proxy, auth_method};
 use clap::{Parser, Subcommand};
 use color_eyre::{
@@ -214,31 +216,110 @@ async fn login(
         );
     }
 
-    println!("signed in");
+    // Adoption only parses the token; it does not prove the session is live.
+    // A token scraped from a browser profile can be stale, because Chrome
+    // flushes localStorage lazily. Verify now, so failure lands here with an
+    // explanation rather than later on `bfm play` as a puzzle.
+    match bfm.list_mental_states().await {
+        Ok(_) => println!("signed in"),
+        Err(e) if e.to_string().contains(bfm_proto::error_code::NEEDS_LOGIN) => {
+            bail!(
+                "that session is no longer valid.\n\
+                 If it came from a browser profile it may be stale — Chrome writes \n\
+                 localStorage to disk lazily. Sign in again in the browser, close the \n\
+                 tab so it flushes, and retry."
+            );
+        }
+        // A network blip should not make a good login look like a bad one.
+        Err(e) => {
+            println!("signed in (could not reach Brain.fm to verify: {e})");
+        }
+    }
     Ok(())
 }
 
-/// The only route for SSO accounts: let the real web app in a real browser do
-/// the provider login, then adopt the session it produced. See `docs/auth.md`
-/// for why we cannot do the OAuth ourselves.
+/// The only route for SSO accounts: let the real web app in a real browser
+/// do the provider login, then adopt the session it produced. See
+/// `docs/auth.md` for why we cannot do the OAuth ourselves.
+///
+/// The session is read straight out of the browser profile, so the user never
+/// has to open DevTools or copy anything. Pasting remains as a fallback for
+/// browsers we cannot read.
 async fn browser_handoff(bfm: &BrainFM1Proxy<'_>) -> Result<()> {
     const URL: &str = "https://my.brain.fm/";
-    let _ = std::process::Command::new("xdg-open").arg(URL).spawn();
 
-    println!("Opened {URL} — sign in with whichever provider your account uses.");
+    // Already signed in? Then there is nothing to do but pick it up.
+    if let Some(found) = browser::find_session() {
+        println!("Found a Brain.fm session in {}.", found.profile);
+        bfm.login(auth_method::TOKEN, "", &found.token).await?;
+        return Ok(());
+    }
+
+    // `xdg-open` chats on stdout, and it would land in the middle of the
+    // prompt below.
+    let _ = std::process::Command::new("xdg-open")
+        .arg(URL)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+
+    println!("Opened {URL}");
+    println!("Sign in with whichever provider your account uses, then come back here.");
+    print!("Press Enter once you are signed in… ");
+    use std::io::Write as _;
+    let _ = std::io::stdout().flush();
+    let mut line = String::new();
+    std::io::stdin().read_line(&mut line)?;
+
+    if let Some(found) = browser::find_session() {
+        println!("Found a Brain.fm session in {}.", found.profile);
+        bfm.login(auth_method::TOKEN, "", &found.token).await?;
+        return Ok(());
+    }
+
+    // Unreadable profile (Firefox, a snap/flatpak browser, a custom data
+    // dir). Fall back to the manual route.
     println!();
-    println!("Then, in that tab, open DevTools (F12) and run:");
+    println!("Could not read a session from any local browser profile.");
+    println!("Falling back to copy-and-paste. In that tab, open DevTools (F12) and run:");
+    println!();
     println!("    JSON.parse(JSON.parse(localStorage['persist:auth']).token)");
     println!();
-    println!("Paste the value here (it will not be echoed).");
+    println!("Copy the RESULT — a long string of three dot-separated parts starting");
+    println!("with `eyJ` — not the command itself.");
 
     let token =
         rpassword::prompt_password("session token: ").wrap_err("could not read the token")?;
-    let token = token.trim().trim_matches('"');
+    let token = token.trim().trim_matches('"').trim();
+    validate_pasted_token(token)?;
+    bfm.login(auth_method::TOKEN, "", token).await?;
+    Ok(())
+}
+
+/// Check a pasted value looks like a JWT before handing it to the daemon.
+///
+/// Without this the daemon answers with a base64 error naming an offset,
+/// which tells the user nothing about what they actually did wrong.
+fn validate_pasted_token(token: &str) -> Result<()> {
     if token.is_empty() {
         bail!("no token entered");
     }
-    bfm.login(auth_method::TOKEN, "", token).await?;
+    if token.contains('(') || token.contains(' ') || token.starts_with("JSON") {
+        bail!(
+            "that looks like the JavaScript snippet, not its result.\n\
+             Run it in the DevTools console and copy what it prints — a long \n\
+             string beginning with `eyJ`."
+        );
+    }
+    if token.split('.').count() != 3 {
+        bail!(
+            "that is not a session token: expected three dot-separated parts, found {}",
+            token.split('.').count()
+        );
+    }
+    if !token.starts_with("eyJ") {
+        bail!("that is not a session token: it should begin with `eyJ`");
+    }
     Ok(())
 }
 

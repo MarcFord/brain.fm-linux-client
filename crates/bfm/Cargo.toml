@@ -17,6 +17,7 @@ path = "src/main.rs"
 # directly, the daemon stops being the product and the plugin surface rots.
 # Enforced by tests/layering.rs.
 [dependencies]
+base64.workspace = true
 bfm-proto.workspace = true
 clap.workspace = true
 color-eyre.workspace = true

@@ -109,11 +109,17 @@ crates/
   bfmd         The daemon. Session orchestration, timer state machine, hook runner,
                MPRIS server, BrainFM1 server, config, secrets.
   bfm          CLI. A thin bfm-proto client. No API or audio code whatsoever.
+  bfm-ui-core  Shared front-end core: state model, duration formatting, bus
+               plumbing, browser-profile session scan. Toolkit-agnostic, so
+               GTK and Qt render one model rather than each deriving its own.
+  bfm-gtk      GTK4 + libadwaita front-end (GNOME, Hyprland), with a Wayland
+               layer-shell overlay mode.
   bfm-tui      Optional ratatui frontend. Also just a client. (Later.)
 ```
 
 The hard rule that keeps this honest: **`bfm` must not depend on `bfm-api` or
-`bfm-player`.** The moment the CLI can talk to Brain.fm directly, the daemon stops being
+`bfm-player` — and neither may any front-end.** The moment a first-party client can talk
+to Brain.fm directly, the daemon stops being
 the product and the plugin surface rots.
 
 ## Internals of `bfmd`
@@ -213,7 +219,8 @@ The API is undocumented and can break any Tuesday, so tests must not touch the n
 | 4 | ~~`bfm` CLI~~ **done** | Thin client: `login` (4 methods), `play`, `stop`, `timer`, `list`, `status --json --watch` |
 | 5 | ~~Desktop citizen~~ **mostly done** | MPRIS served, systemd unit, waybar module, D-Bus activation. Completions and man page outstanding |
 | 6 | ~~Extensibility~~ **done** | Timer state machine, hooks, published proxy. **Omarchy plugin unblocked** |
-| 7 | `bfm-tui` | Optional frontend, as a client |
+| 7 | ~~Native GUI~~ **GTK done** | `bfm-ui-core` + `bfm-gtk` (libadwaita/relm4), layer-shell overlay for Hyprland. Kirigami/KDE outstanding |
+| 8 | `bfm-tui` | Optional frontend, as a client |
 
 Milestone 6 is the real finish line — it's the one the next project depends on.
 

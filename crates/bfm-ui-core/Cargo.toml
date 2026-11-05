@@ -1,0 +1,22 @@
+[package]
+name = "bfm-ui-core"
+description = "Toolkit-agnostic client state for bfm front-ends."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+# Like the CLI, a front-end is a bfm-proto client and nothing more.
+# No bfm-api, no bfm-player. Enforced by tests/layering.rs.
+[dependencies]
+async-channel = "2"
+base64.workspace = true
+serde_json.workspace = true
+bfm-proto.workspace = true
+futures-util = "0.3"
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+zbus.workspace = true

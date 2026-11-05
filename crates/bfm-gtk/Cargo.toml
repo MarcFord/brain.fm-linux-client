@@ -1,0 +1,26 @@
+[package]
+name = "bfm-gtk"
+description = "Native GTK4/libadwaita front-end for bfm."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "bfm-gtk"
+path = "src/main.rs"
+
+# A front-end is a bfm-proto client via bfm-ui-core. No bfm-api, no
+# bfm-player — enforced by tests/layering.rs.
+[dependencies]
+bfm-ui-core.workspace = true
+clap.workspace = true
+gtk4-layer-shell = "0.8"
+# relm4 re-exports this crate; newer widgets (ToolbarView, 1.4+) are gated
+# behind version features. The system ships libadwaita 1.9.
+libadwaita = { version = "0.9", features = ["v1_9"] }
+relm4 = { version = "0.11", features = ["libadwaita"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true

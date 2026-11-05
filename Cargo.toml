@@ -6,6 +6,8 @@ members = [
     "crates/bfm-player",
     "crates/bfmd",
     "crates/bfm",
+    "crates/bfm-ui-core",
+    "crates/bfm-gtk",
 ]
 
 [workspace.package]
@@ -21,6 +23,7 @@ authors = ["Marc Ford"]
 bfm-api = { path = "crates/bfm-api", version = "0.1.0" }
 bfm-proto = { path = "crates/bfm-proto", version = "0.1.0" }
 bfm-player = { path = "crates/bfm-player", version = "0.1.0" }
+bfm-ui-core = { path = "crates/bfm-ui-core", version = "0.1.0" }
 
 # -- shared
 serde = { version = "1", features = ["derive"] }

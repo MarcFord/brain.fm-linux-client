@@ -4,9 +4,8 @@
 //! this crate by design: the daemon is the product, and this binary has no
 //! privileges a third-party plugin lacks.
 
-mod browser;
-
 use bfm_proto::{BrainFM1Proxy, auth_method};
+use bfm_ui_core::browser;
 use clap::{Parser, Subcommand};
 use color_eyre::{
     Result,

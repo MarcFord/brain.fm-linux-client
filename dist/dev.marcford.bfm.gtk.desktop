@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Brain.fm
+Comment=Functional music for focus, relaxation and sleep (unofficial)
+Exec=bfm-gtk
+Icon=dev.marcford.bfm
+Terminal=false
+Categories=AudioVideo;Audio;Player;
+Keywords=focus;music;concentration;sleep;
+StartupNotify=true
+# Lets the compositor match the window; Hyprland window rules key off this.
+StartupWMClass=dev.marcford.bfm.gtk

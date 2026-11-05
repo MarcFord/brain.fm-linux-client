@@ -13,7 +13,10 @@ use std::collections::HashMap;
 use bfm_proto::{BrainFM1Proxy, auth_method};
 use futures_util::StreamExt as _;
 
-use crate::state::{Playback, State, timer_from, track_from};
+use crate::{
+    filters::Catalog,
+    state::{Playback, State, timer_from, track_from},
+};
 
 /// Something the user asked for.
 #[derive(Debug, Clone)]
@@ -35,6 +38,11 @@ pub enum Command {
     Logout,
     /// Re-read everything, for a manual refresh.
     Refresh,
+    /// Load the activities, genres and suggested lengths for one state.
+    ///
+    /// Per-state because the catalog genuinely differs: Focus offers ten
+    /// base genres, Sleep offers one.
+    FetchCatalog(String),
 }
 
 /// Something the front-end should react to.
@@ -47,12 +55,9 @@ pub enum Update {
     Disconnected(String),
     /// A `code` from `bfm_proto::error_code`, plus a human message.
     Failed { code: String, message: String },
-    /// The catalog, fetched lazily because it needs authentication.
-    Catalog {
-        states: Vec<String>,
-        activities: Vec<(String, String)>,
-        genres: Vec<String>,
-    },
+    /// Catalog for one state, fetched lazily because it needs
+    /// authentication.
+    Catalog(Box<Catalog>),
 }
 
 /// Handle to the background bus thread.
@@ -165,6 +170,14 @@ async fn run(commands: async_channel::Receiver<Command>, updates: async_channel:
 
             cmd = commands.recv() => {
                 let Ok(cmd) = cmd else { return };  // front-end dropped
+
+                // Catalog loads answer with a catalog, not a state change.
+                if let Command::FetchCatalog(state) = &cmd {
+                    let catalog = fetch_catalog(&bfm, state).await;
+                    let _ = updates.send(Update::Catalog(Box::new(catalog))).await;
+                    continue;
+                }
+
                 if let Err(e) = apply(&bfm, cmd).await {
                     let (code, message) = split_error(&e);
                     let _ = updates.send(Update::Failed { code, message }).await;
@@ -198,9 +211,23 @@ async fn apply(bfm: &BrainFM1Proxy<'_>, cmd: Command) -> zbus::Result<()> {
         Command::SetVolume(v) => bfm.set_volume(v).await?,
         Command::LoginFromBrowserToken(t) => bfm.login(auth_method::TOKEN, "", &t).await?,
         Command::Logout => bfm.logout().await?,
-        Command::Refresh => {}
+        Command::Refresh | Command::FetchCatalog(_) => {}
     }
     Ok(())
+}
+
+/// Load one state's catalog.
+///
+/// `ListSessionLengths` arrived in interface version 2, so a daemon older
+/// than the front-end simply yields no suggested lengths rather than
+/// failing the whole fetch.
+async fn fetch_catalog(bfm: &BrainFM1Proxy<'_>, state: &str) -> Catalog {
+    Catalog {
+        state: state.to_owned(),
+        activities: bfm.list_activities(state).await.unwrap_or_default(),
+        genres: bfm.list_genres(state).await.unwrap_or_default(),
+        lengths: bfm.list_session_lengths(state).await.unwrap_or_default(),
+    }
 }
 
 async fn read_state(bfm: &BrainFM1Proxy<'_>) -> State {

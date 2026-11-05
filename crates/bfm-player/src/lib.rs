@@ -20,6 +20,14 @@ pub use schedule::{DEFAULT_PREFETCH_LEAD, Decision, PositionClock, Schedule};
 
 use std::time::Duration;
 
+/// Drop the signing parameters from an audio URL so it is safe to log.
+pub fn scrub(url: &str) -> &str {
+    match url.find('?') {
+        Some(i) => &url[..i],
+        None => url,
+    }
+}
+
 /// Instructions to the audio thread.
 ///
 /// Generations are assigned internally by [`schedule::Schedule`], so callers

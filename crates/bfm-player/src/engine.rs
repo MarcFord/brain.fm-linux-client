@@ -82,9 +82,16 @@ fn run(commands: Receiver<Command>, events: Sender<Event>, ready: Sender<Result<
     };
     let player = RodioPlayer::connect_new(device.mixer());
 
-    // StreamDownload opens the HTTP stream asynchronously; this thread owns a
-    // single-threaded runtime for that and nothing else.
-    let rt = match tokio::runtime::Builder::new_current_thread()
+    // StreamDownload opens the HTTP stream asynchronously and then keeps
+    // downloading on a background task.
+    //
+    // This MUST be multi-threaded. With `new_current_thread` the runtime is
+    // only driven for the duration of a `block_on`, so the download task
+    // stops the instant `new_http` returns; the decoder then waits forever
+    // for bytes that never arrive. The symptom is silence with no error and
+    // a session stuck in "buffering".
+    let rt = match tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
         .enable_all()
         .build()
     {
@@ -128,14 +135,24 @@ fn apply(
             player.stop();
             clock.reset();
             let generation = schedule.begin(length);
+            tracing::info!(
+                generation,
+                secs = length.as_secs(),
+                url = %crate::scrub(&url),
+                "opening audio stream"
+            );
             match open(&url, rt) {
                 Ok(source) => {
                     player.append(source);
                     player.play();
                     clock.resume_at(Instant::now());
+                    tracing::info!(generation, "decoding and playing");
                     events.send(Event::Started { generation }).is_ok()
                 }
-                Err(e) => emit_error(events, e),
+                Err(e) => {
+                    tracing::error!(generation, error = %e, "could not start the track");
+                    emit_error(events, e)
+                }
             }
         }
 
@@ -233,4 +250,102 @@ fn emit_error(events: &Sender<Event>, e: PlayerError) -> bool {
             message: e.to_string(),
         })
         .is_ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Read as _, Write as _};
+    use std::net::TcpListener;
+
+    /// Serve `body` over HTTP on an ephemeral port until the test ends.
+    ///
+    /// Hand-rolled because the point is to exercise the real network path
+    /// with no mocking between `StreamDownload` and a socket.
+    fn serve(body: &'static [u8]) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().unwrap().port();
+
+        thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                // Read the request headers; we answer every request the same.
+                let mut buf = [0u8; 2048];
+                let _ = stream.read(&mut buf);
+                let head = format!(
+                    "HTTP/1.1 200 OK\r\n\
+                     Content-Type: audio/mpeg\r\n\
+                     Content-Length: {}\r\n\
+                     Accept-Ranges: none\r\n\
+                     Connection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = stream.write_all(head.as_bytes());
+                let _ = stream.write_all(body);
+                let _ = stream.flush();
+            }
+        });
+        format!("http://127.0.0.1:{port}/tone.mp3")
+    }
+
+    fn runtime() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap()
+    }
+
+    /// The test that was missing.
+    ///
+    /// Every other test in this crate covers the scheduling logic, which was
+    /// never where the risk lay. The adapter had no coverage at all, and the
+    /// first real playback attempt hung silently in "buffering" because the
+    /// download ran on a runtime nobody was driving.
+    ///
+    /// This streams a real MP3 over a real socket and asserts samples come
+    /// out the other end. It fails — by hanging — against a current-thread
+    /// runtime, which is exactly the bug.
+    #[test]
+    fn decodes_audio_from_a_real_http_stream() {
+        static TONE: &[u8] = include_bytes!("../tests/fixtures/tone.mp3");
+        let url = serve(TONE);
+        let rt = runtime();
+
+        let decoder = open(&url, &rt).expect("stream should open and decode");
+
+        // One second of 44.1kHz mono; insist on real output, not a trickle.
+        let samples = decoder.take(40_000).count();
+        assert!(
+            samples > 10_000,
+            "expected a second of audio, decoded only {samples} samples"
+        );
+    }
+
+    /// A dead URL must fail promptly rather than hang.
+    #[test]
+    fn a_refused_connection_is_an_error_not_a_hang() {
+        // Port 1 on loopback: nothing listens, connection refused at once.
+        let rt = runtime();
+        let err = open("http://127.0.0.1:1/nope.mp3", &rt);
+        assert!(
+            err.is_err(),
+            "a refused connection must surface as an error"
+        );
+    }
+
+    #[test]
+    fn a_malformed_url_is_rejected_before_any_io() {
+        let rt = runtime();
+        assert!(open("not a url", &rt).is_err());
+    }
+
+    /// Signed URLs are credentials; the log helper must not echo one.
+    #[test]
+    fn logging_helper_drops_the_signature() {
+        assert_eq!(
+            crate::scrub("https://audio2.brain.fm/x.mp3?expiration=1&token=secret"),
+            "https://audio2.brain.fm/x.mp3"
+        );
+    }
 }

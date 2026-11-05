@@ -119,6 +119,11 @@ the product and the plugin surface rots.
 ## Internals of `bfmd`
 
 - **tokio** multi-threaded runtime; **zbus** for both D-Bus interfaces.
+- **The audio thread's runtime must be multi-threaded.** `StreamDownload`
+  establishes the stream and then keeps downloading on a background task. On a
+  current-thread runtime that task only runs while something is blocked on it, so the
+  download stops the instant `new_http` returns and the decoder waits forever. The
+  symptom is silence with no error and a session stuck in `buffering`.
 - **Audio on its own thread.** rodio owns the output device; the daemon talks to it over
   typed command/event channels. Confirmed against live traffic: the audio is progressive
   MP3 from `audio2.brain.fm`, not HLS, so `stream-download` → `rodio::Decoder` is

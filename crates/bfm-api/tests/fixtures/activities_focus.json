@@ -1,0 +1,10 @@
+{
+  "status": 200,
+  "result": [
+    { "id": "QYN78dJrrzs5mD_TJgBcq", "displayValue": "Deep Work",  "description": "Sustained concentration", "type": "dynamic", "order": 1, "isDefault": true,  "status": "active", "isOnTheFly": false, "hasFixedGenres": false, "baseActivityId": null },
+    { "id": "LpcmC-6QIHPot2sOVGV7B", "displayValue": "Motivation", "description": "Drive and energy",        "type": "dynamic", "order": 2, "isDefault": false, "status": "active", "isOnTheFly": false, "hasFixedGenres": false, "baseActivityId": null },
+    { "id": "nrwXg0f1harJZF2RbDDWP", "displayValue": "Creativity", "description": "Divergent thinking",      "type": "dynamic", "order": 3, "isDefault": false, "status": "active", "isOnTheFly": false, "hasFixedGenres": true,  "baseActivityId": null },
+    { "id": "CaoevjfzVc_RT6wyQZyO3", "displayValue": "Learning",   "description": "Study and retention",     "type": "dynamic", "order": 4, "isDefault": false, "status": "active", "isOnTheFly": false, "hasFixedGenres": false, "baseActivityId": null },
+    { "id": "dliRCb7TLb0hOGe_Jou3e", "displayValue": "Light Work", "description": "Low-effort tasks",        "type": "dynamic", "order": 5, "isDefault": false, "status": "active", "isOnTheFly": false, "hasFixedGenres": false, "baseActivityId": null }
+  ]
+}

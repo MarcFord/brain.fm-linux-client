@@ -1,0 +1,42 @@
+{
+  "status": 200,
+  "result": [
+    {
+      "track": {
+        "id": "trk_alcatraz",
+        "name": "Alcatraz",
+        "imageUrl": "https://cdn.brain.fm/images/tracks/alcatraz.webp",
+        "createdAt": "2025-04-11T09:14:22.000Z",
+        "releaseStatus": "released",
+        "beatsPerMinute": 112,
+        "brightnessLevel": 0.42,
+        "complexityLevel": 0.31,
+        "hasMultipleNELs": true,
+        "isNewlyCreated": false,
+        "favoritesRanking": 17,
+        "firstSessionRanking": 3,
+        "tags": [
+          { "type": "genre", "value": "Electronic" },
+          { "type": "mood",  "value": "Driving" }
+        ],
+        "relatedActivities": [
+          {
+            "id": "QYN78dJrrzs5mD_TJgBcq",
+            "mentalState": { "id": "focus", "displayValue": "Focus", "imageUrl": "https://cdn.brain.fm/x.webp" },
+            "metadata": { "images": { "background": { "imageURL": "https://cdn.brain.fm/bg.webp" } } }
+          }
+        ]
+      },
+      "trackVariation": {
+        "id": "tv_alcatraz_high",
+        "url": "tracks/alcatraz/high.mp3",
+        "baseUrl": "tracks/alcatraz/high.mp3",
+        "cdnUrl": "https://audio2.brain.fm/alcatraz-high.mp3",
+        "tokenedUrl": "https://audio2.brain.fm/alcatraz-high.mp3?expiration=1801687490428&token=PLACEHOLDER_SIGNATURE_44_CHARS_AAAAAAAAAAAA",
+        "lengthInSeconds": 1800,
+        "neuralEffectLevel": 0.06,
+        "style": "normal"
+      }
+    }
+  ]
+}

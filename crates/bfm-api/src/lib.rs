@@ -17,7 +17,7 @@ pub mod client;
 pub mod error;
 pub mod models;
 
-pub use auth::{Claims, SessionToken};
+pub use auth::{AuthMethod, Claims, Password, SessionToken};
 pub use client::{Client, TokenRotation};
 pub use error::{ApiError, Result};
 pub use models::*;

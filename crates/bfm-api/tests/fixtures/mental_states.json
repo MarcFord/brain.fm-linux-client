@@ -1,0 +1,42 @@
+{
+  "status": 200,
+  "result": [
+    {
+      "id": "focus",
+      "displayValue": "Focus",
+      "order": 1,
+      "status": "active",
+      "primaryColor": "#6C5CE7",
+      "imageUrl": "https://cdn.brain.fm/images/start/focus.webp",
+      "defaultSessionLengths": [
+        { "id": "sl1", "lengthInSeconds": 3600, "displayValue": "1 hour", "order": 1 },
+        { "id": "sl2", "lengthInSeconds": 5400, "displayValue": "1.5 hours", "order": 2 },
+        { "id": "sl3", "lengthInSeconds": 7200, "displayValue": "2 hours", "order": 3 }
+      ],
+      "defaultActivity": {
+        "id": "QYN78dJrrzs5mD_TJgBcq",
+        "displayValue": "Deep Work",
+        "description": "Sustained concentration",
+        "type": "dynamic",
+        "isDefault": true,
+        "hasFixedGenres": false
+      }
+    },
+    {
+      "id": "relax",
+      "displayValue": "Relax",
+      "order": 2,
+      "status": "active",
+      "defaultSessionLengths": [
+        { "id": "sl4", "lengthInSeconds": 900, "displayValue": "15 minutes", "order": 1 }
+      ],
+      "defaultActivity": {
+        "id": "Guzs8FZ2vNizKdnUaULTf",
+        "displayValue": "Unwind",
+        "type": "dynamic",
+        "isDefault": true,
+        "hasFixedGenres": false
+      }
+    }
+  ]
+}

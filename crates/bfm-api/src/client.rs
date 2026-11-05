@@ -72,6 +72,8 @@ fn token_from(env: &Envelope<serde_json::Value>) -> Option<String> {
 pub struct Client {
     http: reqwest::Client,
     token: Option<SessionToken>,
+    v2: String,
+    v3: String,
 }
 
 impl Client {
@@ -86,7 +88,19 @@ impl Client {
         Ok(Self {
             http: reqwest::Client::builder().default_headers(h).build()?,
             token: None,
+            v2: API_V2.to_owned(),
+            v3: API_V3.to_owned(),
         })
+    }
+
+    /// Point the client at different hosts.
+    ///
+    /// Exists so the test suite can drive a mock server. Nothing in the
+    /// shipped binaries calls this.
+    pub fn with_base_urls(mut self, v2: impl Into<String>, v3: impl Into<String>) -> Self {
+        self.v2 = v2.into();
+        self.v3 = v3.into();
+        self
     }
 
     pub fn with_token(mut self, token: SessionToken) -> Self {
@@ -151,7 +165,7 @@ impl Client {
 
     pub async fn mental_states(&self) -> Result<(Vec<MentalState>, TokenRotation)> {
         self.send(
-            self.http.get(format!("{API_V3}/mentalStates/dynamic")),
+            self.http.get(format!("{}/mentalStates/dynamic", self.v3)),
             "mentalStates",
         )
         .await
@@ -159,8 +173,10 @@ impl Client {
 
     pub async fn activities(&self, state: &str) -> Result<(Vec<Activity>, TokenRotation)> {
         self.send(
-            self.http
-                .get(format!("{API_V3}/mentalStates/dynamic/{state}/activities")),
+            self.http.get(format!(
+                "{}/mentalStates/dynamic/{state}/activities",
+                self.v3
+            )),
             "activities",
         )
         .await
@@ -169,7 +185,7 @@ impl Client {
     pub async fn genres(&self, state: &str) -> Result<(Genres, TokenRotation)> {
         self.send(
             self.http
-                .get(format!("{API_V3}/mentalStates/dynamic/{state}/genres")),
+                .get(format!("{}/mentalStates/dynamic/{state}/genres", self.v3)),
             "genres",
         )
         .await
@@ -184,7 +200,7 @@ impl Client {
     pub async fn new_serving(&self, state: &str) -> Result<(Vec<Serving>, TokenRotation)> {
         self.send(
             self.http
-                .get(format!("{API_V3}/servings/new"))
+                .get(format!("{}/servings/new", self.v3))
                 .query(&[("dynamicMentalStateId", state)]),
             "servings/new",
         )
@@ -198,7 +214,7 @@ impl Client {
         let uid = self.user_id()?;
         self.send(
             self.http
-                .post(format!("{API_V3}/users/{uid}/sessions"))
+                .post(format!("{}/users/{uid}/sessions", self.v3))
                 .query(&[("platform", "web")])
                 .json(req),
             "sessions",
@@ -209,7 +225,7 @@ impl Client {
     // ---- account ----
 
     pub async fn me(&self) -> Result<(serde_json::Value, TokenRotation)> {
-        self.send(self.http.get(format!("{API_V2}/users/me")), "users/me")
+        self.send(self.http.get(format!("{}/users/me", self.v2)), "users/me")
             .await
     }
 
@@ -242,7 +258,7 @@ impl Client {
     pub async fn consume_magic_link(&self, token: &str) -> Result<SessionToken> {
         let res = self
             .http
-            .get(format!("{API_V2}/auth/magic-link/{token}"))
+            .get(format!("{}/auth/magic-link/{token}", self.v2))
             .send()
             .await?;
 
@@ -287,7 +303,7 @@ impl Client {
 
         let res = self
             .http
-            .post(format!("{API_V2}/auth/email-login"))
+            .post(format!("{}/auth/email-login", self.v2))
             .json(&Body {
                 email,
                 password: password.expose(),

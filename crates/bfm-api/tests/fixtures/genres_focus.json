@@ -1,0 +1,14 @@
+{
+  "status": 200,
+  "result": {
+    "baseGenreNames": ["Acoustic", "Atmospheric", "Cinematic", "Classical", "Drone", "Electronic", "Grooves", "Lofi", "Piano", "Post Rock"],
+    "natureGenreNames": ["Beach", "Chimes & Bowls", "Forest", "Nightsounds", "Rain", "Rainforest", "River", "Thunder", "Underwater", "Wind"],
+    "baseGenres": [
+      { "name": "Electronic", "imageUrl": "https://cdn.brain.fm/images/genres/electronic.webp" },
+      { "name": "Lofi",       "imageUrl": "https://cdn.brain.fm/images/genres/lofi.webp" }
+    ],
+    "natureGenres": [
+      { "name": "Rain", "imageUrl": "https://cdn.brain.fm/images/genres/rain.webp" }
+    ]
+  }
+}

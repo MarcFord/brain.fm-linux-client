@@ -12,7 +12,7 @@ use std::{
     fmt,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use zeroize::Zeroize;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::error::{ApiError, Result};
 
@@ -94,8 +94,7 @@ impl Drop for SessionToken {
 }
 
 /// A password, held only long enough to post it. Never stored, never logged.
-#[derive(Clone, Zeroize)]
-#[zeroize(drop)]
+#[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct Password(String);
 
 impl Password {

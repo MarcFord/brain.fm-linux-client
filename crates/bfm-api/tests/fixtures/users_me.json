@@ -1,0 +1,24 @@
+{
+  "status": 200,
+  "result": {
+    "user": {
+      "id": "PLACEHOLDERUSERID0001",
+      "email": "user@example.invalid",
+      "firstName": null,
+      "age": null,
+      "gender": null,
+      "partnerId": null,
+      "enterpriseId": null,
+      "createdAt": "2024-02-03T10:00:00.000Z"
+    },
+    "membership": {
+      "membershipTypeId": 2,
+      "isActive": 1,
+      "isCancelled": 0,
+      "expirationDate": "2027-02-03T10:00:00.000Z",
+      "type": "paid"
+    },
+    "favorites": [],
+    "usage": { "totalSessionsPlayed": 412, "totalMinutesPlayed": 18233 }
+  }
+}

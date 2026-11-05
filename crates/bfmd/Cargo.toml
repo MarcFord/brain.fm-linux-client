@@ -1,0 +1,23 @@
+[package]
+name = "bfmd"
+description = "The bfm daemon: session orchestration, timers, hooks, MPRIS and the BrainFM1 D-Bus API."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "bfmd"
+path = "src/main.rs"
+
+[dependencies]
+bfm-api.workspace = true
+bfm-player.workspace = true
+bfm-proto.workspace = true
+color-eyre.workspace = true
+serde.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

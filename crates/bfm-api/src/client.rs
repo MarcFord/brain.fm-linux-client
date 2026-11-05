@@ -1,0 +1,235 @@
+//! HTTP client.
+//!
+//! Two behaviours are load-bearing and easy to get wrong:
+//!
+//! * **Browser-shaped headers.** The API rejects requests that don't carry the
+//!   web app's `Origin` and `Referer`.
+//! * **Lazy token rotation.** Never refresh ahead of time. Let the token lapse;
+//!   the next response carries a replacement, which must be persisted.
+
+use reqwest::{
+    StatusCode,
+    header::{ACCEPT, CONTENT_TYPE, HeaderMap, HeaderValue, ORIGIN, REFERER, USER_AGENT},
+};
+use serde::{Serialize, de::DeserializeOwned};
+
+use crate::{
+    API_V2, API_V3, WEB_ORIGIN,
+    auth::SessionToken,
+    error::{ApiError, Result},
+    models::*,
+};
+
+/// A desktop Firefox UA. The API expects to be talking to a browser.
+const UA: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0";
+
+/// Returned alongside each call so the caller can persist a rotated token.
+#[derive(Debug, Clone, Default)]
+pub struct TokenRotation(pub Option<String>);
+
+impl TokenRotation {
+    pub fn is_some(&self) -> bool {
+        self.0.is_some()
+    }
+}
+
+pub struct Client {
+    http: reqwest::Client,
+    token: Option<SessionToken>,
+}
+
+impl Client {
+    pub fn new() -> Result<Self> {
+        let mut h = HeaderMap::new();
+        h.insert(ORIGIN, HeaderValue::from_static(WEB_ORIGIN));
+        h.insert(REFERER, HeaderValue::from_static("https://my.brain.fm/"));
+        h.insert(ACCEPT, HeaderValue::from_static("*/*"));
+        h.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        h.insert(USER_AGENT, HeaderValue::from_static(UA));
+
+        Ok(Self {
+            http: reqwest::Client::builder().default_headers(h).build()?,
+            token: None,
+        })
+    }
+
+    pub fn with_token(mut self, token: SessionToken) -> Self {
+        self.token = Some(token);
+        self
+    }
+
+    pub fn token(&self) -> Option<&SessionToken> {
+        self.token.as_ref()
+    }
+
+    fn user_id(&self) -> Result<&str> {
+        Ok(self
+            .token
+            .as_ref()
+            .ok_or(ApiError::Unauthenticated)?
+            .user_id())
+    }
+
+    /// Issue a request and unwrap the envelope, surfacing any rotated token.
+    async fn send<T: DeserializeOwned>(
+        &self,
+        req: reqwest::RequestBuilder,
+        context: &'static str,
+    ) -> Result<(T, TokenRotation)> {
+        let req = match &self.token {
+            Some(t) => req.bearer_auth(t.as_str()),
+            None => req,
+        };
+        let res = req.send().await?;
+
+        match res.status() {
+            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
+                return Err(ApiError::Unauthenticated);
+            }
+            // The API answers 400 for a malformed token, not 401.
+            StatusCode::BAD_REQUEST => return Err(ApiError::MalformedToken),
+            StatusCode::TOO_MANY_REQUESTS => {
+                let retry_after_secs = res
+                    .headers()
+                    .get(reqwest::header::RETRY_AFTER)
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|v| v.parse().ok());
+                return Err(ApiError::RateLimited { retry_after_secs });
+            }
+            s if !s.is_success() => return Err(ApiError::Http { status: s.as_u16() }),
+            _ => {}
+        }
+
+        let bytes = res.bytes().await?;
+        let env: Envelope<T> = serde_json::from_slice(&bytes)
+            .map_err(|source| ApiError::SchemaChanged { context, source })?;
+
+        if env.token.is_some() {
+            tracing::debug!("session token was past expiry; server issued a replacement");
+        }
+        Ok((env.result, TokenRotation(env.token)))
+    }
+
+    // ---- catalog ----
+
+    pub async fn mental_states(&self) -> Result<(Vec<MentalState>, TokenRotation)> {
+        self.send(
+            self.http.get(format!("{API_V3}/mentalStates/dynamic")),
+            "mentalStates",
+        )
+        .await
+    }
+
+    pub async fn activities(&self, state: &str) -> Result<(Vec<Activity>, TokenRotation)> {
+        self.send(
+            self.http
+                .get(format!("{API_V3}/mentalStates/dynamic/{state}/activities")),
+            "activities",
+        )
+        .await
+    }
+
+    pub async fn genres(&self, state: &str) -> Result<(Genres, TokenRotation)> {
+        self.send(
+            self.http
+                .get(format!("{API_V3}/mentalStates/dynamic/{state}/genres")),
+            "genres",
+        )
+        .await
+    }
+
+    // ---- playback ----
+
+    /// Fetch a playable track for a mental state.
+    ///
+    /// This is what the web player uses for ongoing playback, in preference to
+    /// creating a session.
+    pub async fn new_serving(&self, state: &str) -> Result<(Vec<Serving>, TokenRotation)> {
+        self.send(
+            self.http
+                .get(format!("{API_V3}/servings/new"))
+                .query(&[("dynamicMentalStateId", state)]),
+            "servings/new",
+        )
+        .await
+    }
+
+    pub async fn start_session(
+        &self,
+        req: &SessionRequest,
+    ) -> Result<(Vec<Serving>, TokenRotation)> {
+        let uid = self.user_id()?;
+        self.send(
+            self.http
+                .post(format!("{API_V3}/users/{uid}/sessions"))
+                .query(&[("platform", "web")])
+                .json(req),
+            "sessions",
+        )
+        .await
+    }
+
+    // ---- account ----
+
+    pub async fn me(&self) -> Result<(serde_json::Value, TokenRotation)> {
+        self.send(self.http.get(format!("{API_V2}/users/me")), "users/me")
+            .await
+    }
+
+    /// Cheapest call that will mint a replacement for an expired token.
+    pub async fn renew(&self) -> Result<TokenRotation> {
+        Ok(self.me().await?.1)
+    }
+
+    // ---- auth ----
+
+    /// Log in with email and password.
+    ///
+    /// NOTE: the request/response bodies are **unverified** — the capture
+    /// session on 2026-11-05 authenticated with Google, so this path was never
+    /// exercised against the live API. Confirm before relying on it.
+    pub async fn email_login(
+        &self,
+        email: &str,
+        password: &crate::auth::Password,
+    ) -> Result<SessionToken> {
+        #[derive(Serialize)]
+        struct Body<'a> {
+            email: &'a str,
+            password: &'a str,
+        }
+
+        let res = self
+            .http
+            .post(format!("{API_V2}/auth/email-login"))
+            .json(&Body {
+                email,
+                password: password.expose(),
+            })
+            .send()
+            .await?;
+
+        if res.status() == StatusCode::UNAUTHORIZED || res.status() == StatusCode::BAD_REQUEST {
+            return Err(ApiError::Unauthenticated);
+        }
+
+        let bytes = res.bytes().await?;
+        let env: Envelope<serde_json::Value> =
+            serde_json::from_slice(&bytes).map_err(|source| ApiError::SchemaChanged {
+                context: "email-login",
+                source,
+            })?;
+
+        let raw = env
+            .token
+            .or_else(|| {
+                env.result
+                    .get("token")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_owned)
+            })
+            .ok_or(ApiError::Unauthenticated)?;
+
+        SessionToken::parse(raw)
+    }
+}

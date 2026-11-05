@@ -1,0 +1,23 @@
+[package]
+name = "bfm"
+description = "Command-line client for bfmd. Unofficial Brain.fm client for Linux."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "bfm"
+path = "src/main.rs"
+
+# NOTE: bfm deliberately does NOT depend on bfm-api or bfm-player.
+# It is a thin bfm-proto client. The moment the CLI can reach Brain.fm
+# directly, the daemon stops being the product and the plugin surface rots.
+# This is enforced by a test in tests/layering.rs.
+[dependencies]
+bfm-proto.workspace = true
+clap.workspace = true
+color-eyre.workspace = true
+serde_json.workspace = true

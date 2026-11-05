@@ -1,0 +1,50 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/bfm-api",
+    "crates/bfm-proto",
+    "crates/bfm-player",
+    "crates/bfmd",
+    "crates/bfm",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "MIT"
+repository = "https://github.com/MarcFord/brain.fm-linux-client"
+authors = ["Marc Ford"]
+
+[workspace.dependencies]
+# -- internal
+bfm-api = { path = "crates/bfm-api", version = "0.1.0" }
+bfm-proto = { path = "crates/bfm-proto", version = "0.1.0" }
+bfm-player = { path = "crates/bfm-player", version = "0.1.0" }
+
+# -- shared
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "signal"] }
+tracing = "0.1"
+
+# NOTE: the versions below could not be resolved offline during scaffolding.
+# Run `cargo update` on first build and pin anything that drifts.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+base64 = "0.22"
+clap = { version = "4", features = ["derive", "env"] }
+clap_complete = "4"
+clap_mangen = "0.2"
+color-eyre = "0.6"
+etcetera = "0.8"
+figment = { version = "0.10", features = ["toml", "env"] }
+keyring = { version = "3", features = ["linux-native"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+zbus = { version = "5", default-features = false, features = ["tokio"] }
+zeroize = { version = "1", features = ["derive"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"

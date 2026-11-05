@@ -1,0 +1,13 @@
+[package]
+name = "bfm-proto"
+description = "Public D-Bus contract for bfmd. Depend on this to build a bfm client or plugin."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde.workspace = true
+zbus.workspace = true

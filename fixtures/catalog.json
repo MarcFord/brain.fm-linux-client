@@ -1,0 +1,26 @@
+{
+  "_comment": "Captured from live API 2026-11-05. Static catalog data, safe to use as test fixtures.",
+  "mentalStates": [
+    { "id": "focus",    "displayValue": "Focus",    "defaultActivityId": "QYN78dJrrzs5mD_TJgBcq", "sessionLengthsSec": [3600, 5400, 7200] },
+    { "id": "relax",    "displayValue": "Relax",    "defaultActivityId": "Guzs8FZ2vNizKdnUaULTf", "sessionLengthsSec": [900, 2700, 3600] },
+    { "id": "sleep",    "displayValue": "Sleep",    "defaultActivityId": "GItuj2aesnxaVtz1XWTfq", "sessionLengthsSec": [25200, 28800, 32400] },
+    { "id": "meditate", "displayValue": "Meditate", "defaultActivityId": "bPFHhinil-vqYan2P8Go7", "sessionLengthsSec": [900, 1800, 2700, 3600] }
+  ],
+  "focusActivities": [
+    { "id": "QYN78dJrrzs5mD_TJgBcq", "displayValue": "Deep Work", "isDefault": true },
+    { "id": "LpcmC-6QIHPot2sOVGV7B", "displayValue": "Motivation" },
+    { "id": "nrwXg0f1harJZF2RbDDWP", "displayValue": "Creativity" },
+    { "id": "CaoevjfzVc_RT6wyQZyO3", "displayValue": "Learning" },
+    { "id": "dliRCb7TLb0hOGe_Jou3e", "displayValue": "Light Work" }
+  ],
+  "genresByState": {
+    "focus":    { "base": ["Acoustic","Atmospheric","Cinematic","Classical","Drone","Electronic","Grooves","Lofi","Piano","Post Rock"],
+                  "nature": ["Beach","Chimes & Bowls","Forest","Nightsounds","Rain","Rainforest","River","Thunder","Underwater","Wind"] },
+    "relax":    { "base": ["Atmospheric","Electronic"],
+                  "nature": ["Beach","Chimes & Bowls","Forest","Nightsounds","Rain","Rainforest","River","Thunder","Underwater","Wind"] },
+    "sleep":    { "base": ["Atmospheric"],
+                  "nature": ["Beach","Forest","Nightsounds","Rain","Rainforest","River","Thunder","Underwater","Wind"] },
+    "meditate": { "base": ["Atmospheric","Electronic"],
+                  "nature": ["Beach","Chimes & Bowls","Forest","Nightsounds","Rain","Rainforest","River","Thunder","Underwater","Wind"] }
+  }
+}

@@ -1,0 +1,22 @@
+// Waybar module. `bfm status --watch --json` streams one JSON object per
+// state change in waybar's native shape, so there is no polling.
+//
+// Add to ~/.config/waybar/config.jsonc:
+{
+  "custom/bfm": {
+    "exec": "bfm status --watch --json",
+    "return-type": "json",
+    "format": "{icon} {}",
+    "format-icons": {
+      "idle": "",
+      "buffering": "",
+      "playing": "",
+      "paused": ""
+    },
+    "on-click": "bfm pause",
+    "on-click-right": "bfm skip",
+    "on-scroll-up": "bfm volume +5",
+    "on-scroll-down": "bfm volume -5",
+    "tooltip": true
+  }
+}

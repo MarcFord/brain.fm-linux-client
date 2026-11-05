@@ -1,0 +1,33 @@
+# systemd user unit, D-Bus activated.
+#   install:  cp dist/bfmd.service ~/.config/systemd/user/
+#             systemctl --user daemon-reload
+#
+# There is deliberately no [Install] WantedBy: the daemon is started on demand
+# by the first D-Bus call and should not run before anyone asks for music.
+
+[Unit]
+Description=Brain.fm daemon (unofficial)
+Documentation=https://github.com/MarcFord/brain.fm-linux-client
+PartOf=graphical-session.target
+
+[Service]
+Type=dbus
+BusName=dev.marcford.bfm
+ExecStart=%h/.cargo/bin/bfmd
+Restart=on-failure
+RestartSec=2
+
+# The daemon needs the network, the audio device and the user's keyring.
+# It has no business anywhere else on the filesystem.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+MemoryDenyWriteExecute=true
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM

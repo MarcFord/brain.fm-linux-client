@@ -1,0 +1,2 @@
+# Signed audio URLs and bearer tokens must never reach a log line.
+disallowed-methods = []

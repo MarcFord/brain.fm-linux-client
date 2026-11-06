@@ -26,6 +26,10 @@ contents:
     dst: /usr/lib/systemd/user/bfmd.service
   - src: stage/usr/share/dbus-1/services/dev.marcford.bfm.service
     dst: /usr/share/dbus-1/services/dev.marcford.bfm.service
+  - src: stage/usr/share/icons/hicolor/scalable/apps/dev.marcford.bfm.svg
+    dst: /usr/share/icons/hicolor/scalable/apps/dev.marcford.bfm.svg
+  - src: stage/usr/share/icons/hicolor/symbolic/apps/dev.marcford.bfm-symbolic.svg
+    dst: /usr/share/icons/hicolor/symbolic/apps/dev.marcford.bfm-symbolic.svg
   - src: stage/usr/share/doc/bfm/config.example.toml
     dst: /usr/share/doc/bfm/config.example.toml
     type: config

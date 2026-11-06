@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Application icon for bfm.
+
+  An original mark, deliberately not Brain.fm's: this is an unofficial
+  client, and wearing the service's logo would imply an endorsement that
+  does not exist. A symmetric waveform reads as audio at any size and
+  belongs to nobody.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#17616e"/>
+      <stop offset="1" stop-color="#36357f"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#bg)"/>
+
+  <!-- Symmetric about the centre: calm rather than a jagged VU meter. -->
+  <g fill="#ffffff" stroke="none">
+    <rect x="26" y="52"   width="12" height="24" rx="6" opacity="0.62"/>
+    <rect x="45" y="40"   width="12" height="48" rx="6" opacity="0.80"/>
+    <rect x="64" y="28"   width="12" height="72" rx="6"/>
+    <rect x="83" y="40"   width="12" height="48" rx="6" opacity="0.80"/>
+    <rect x="102" y="52"  width="12" height="24" rx="6" opacity="0.62"/>
+  </g>
+</svg>

@@ -16,6 +16,8 @@ APPDIR       = $(DATADIR)/applications
 DBUSDIR      = $(DATADIR)/dbus-1/services
 SYSTEMDDIR   = $(PREFIX)/lib/systemd/user
 DOCDIR       = $(DATADIR)/doc/bfm
+ICONDIR      = $(DATADIR)/icons/hicolor/scalable/apps
+SYMICONDIR   = $(DATADIR)/icons/hicolor/symbolic/apps
 TARGETDIR    = target/$(PROFILE)
 
 ifeq ($(PROFILE),release)
@@ -96,6 +98,12 @@ install: build
 	  > $(DESTDIR)$(SYSTEMDDIR)/bfmd.service
 	sed 's|@BINDIR@|$(BINDIR)|g' dist/dev.marcford.bfm.service.in \
 	  > $(DESTDIR)$(DBUSDIR)/dev.marcford.bfm.service
+	@# The icon lives with the daemon package rather than either GUI, so
+	@# both desktop entries can reference it and neither duplicates it.
+	install -Dm644 dist/icons/dev.marcford.bfm.svg \
+	  $(DESTDIR)$(ICONDIR)/dev.marcford.bfm.svg
+	install -Dm644 dist/icons/dev.marcford.bfm-symbolic.svg \
+	  $(DESTDIR)$(SYMICONDIR)/dev.marcford.bfm-symbolic.svg
 	install -Dm644 dist/config.example.toml $(DESTDIR)$(DOCDIR)/config.example.toml
 	install -Dm644 dist/waybar.jsonc        $(DESTDIR)$(DOCDIR)/waybar.jsonc
 	@# A desktop entry only for a GUI that was actually built, or the
@@ -123,6 +131,8 @@ uninstall:
 	rm -f $(DESTDIR)$(DBUSDIR)/dev.marcford.bfm.service
 	rm -f $(DESTDIR)$(APPDIR)/dev.marcford.bfm.gtk.desktop
 	rm -f $(DESTDIR)$(APPDIR)/dev.marcford.bfm.kde.desktop
+	rm -f $(DESTDIR)$(ICONDIR)/dev.marcford.bfm.svg
+	rm -f $(DESTDIR)$(SYMICONDIR)/dev.marcford.bfm-symbolic.svg
 	rm -rf $(DESTDIR)$(DOCDIR)
 
 ## package: build .deb and .rpm packages (needs nfpm)

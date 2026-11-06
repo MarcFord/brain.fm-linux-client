@@ -2,8 +2,7 @@ use cxx_qt_build::{CxxQtBuilder, QmlModule};
 
 fn main() {
     CxxQtBuilder::new_qml_module(
-        QmlModule::new("dev.marcford.bfm")
-            .qml_files(["qml/Main.qml"]),
+        QmlModule::new("dev.marcford.bfm").qml_files(["qml/Main.qml", "qml/WizardPage.qml"]),
     )
     .file("src/bridge.rs")
     .qt_module("Quick")

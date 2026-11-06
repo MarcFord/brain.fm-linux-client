@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Brain.fm
+GenericName=Functional Music
+Comment=Functional music for focus, relaxation and sleep (unofficial)
+Exec=bfm-kde
+Icon=dev.marcford.bfm
+Terminal=false
+Categories=Qt;KDE;AudioVideo;Audio;Player;
+Keywords=focus;music;concentration;sleep;
+StartupNotify=true

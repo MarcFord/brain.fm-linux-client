@@ -21,6 +21,20 @@ pub struct Envelope<T> {
     pub token: Option<String>,
 }
 
+/// Just enough of a response to keep the session alive.
+///
+/// Mutations do not all return `{status, result}` — favouriting answers
+/// with neither a `result` nor anything we need. Requiring one coupled the
+/// call to a body shape it has no reason to care about, and it failed on
+/// first live use. Only the rotated token matters here.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Ack {
+    #[serde(default)]
+    pub status: u32,
+    #[serde(default)]
+    pub token: Option<String>,
+}
+
 /// Error responses use a **different** envelope: `messages`, not `result`.
 ///
 /// Observed on `POST /v2/auth/email-login`, which answers `422` for bad

@@ -146,6 +146,46 @@ impl Client {
             .user_id())
     }
 
+    /// Issue a mutation and keep only the rotated token.
+    ///
+    /// Deliberately indifferent to the response body: these endpoints do
+    /// not agree on one, and coupling to it buys nothing.
+    async fn send_ack(
+        &self,
+        req: reqwest::RequestBuilder,
+        context: &'static str,
+    ) -> Result<TokenRotation> {
+        let req = match &self.token {
+            Some(t) => req.bearer_auth(t.as_str()),
+            None => req,
+        };
+        let res = req.send().await?;
+
+        match res.status() {
+            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
+                return Err(ApiError::Unauthenticated);
+            }
+            StatusCode::BAD_REQUEST => return Err(ApiError::MalformedToken),
+            StatusCode::UNPROCESSABLE_ENTITY => return Err(rejection(res).await),
+            StatusCode::TOO_MANY_REQUESTS => {
+                return Err(ApiError::RateLimited {
+                    retry_after_secs: None,
+                });
+            }
+            s if !s.is_success() => return Err(ApiError::Http { status: s.as_u16() }),
+            _ => {}
+        }
+
+        let bytes = res.bytes().await?;
+        // An unparseable body is not a failure for a mutation that already
+        // returned 2xx; it only means there is no token to adopt.
+        let ack: Ack = serde_json::from_slice(&bytes).unwrap_or_default();
+        if ack.token.is_some() {
+            tracing::debug!(context, "session token renewed on a mutation");
+        }
+        Ok(TokenRotation(ack.token))
+    }
+
     /// Issue a request and unwrap the envelope, surfacing any rotated token.
     async fn send<T: DeserializeOwned>(
         &self,
@@ -257,21 +297,44 @@ impl Client {
 
     // ---- reactions ----
 
-    /// Favourite or un-favourite a track.
+    /// Favourite a track.
     ///
-    /// The id travels in the path and there is no body; POST adds, DELETE
-    /// removes. *(Path and verbs read from the web bundle; not exercised
-    /// against the live API, because doing so changes real account data.)*
-    pub async fn set_favorite(&self, track_id: &str, on: bool) -> Result<TokenRotation> {
+    /// Captured from the web app, because every guess at this was wrong:
+    /// adding and removing are **not** symmetric. Adding is `PUT` on `/v2`
+    /// and identifies the track by its **variation** id in a body; removing
+    /// is `DELETE` on `/v3` and identifies it by its **track** id in the
+    /// path. Two verbs, two API versions, two different identifiers, for
+    /// the two halves of one operation.
+    pub async fn add_favorite(&self, variation_id: &str) -> Result<TokenRotation> {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Body<'a> {
+            variation_id: &'a str,
+        }
+
         let uid = self.user_id()?;
-        let url = format!("{}/users/{uid}/tracks/{track_id}/favorites", self.v3);
-        let req = if on {
-            self.http.post(url)
-        } else {
-            self.http.delete(url)
-        };
-        let (_, rotation): (serde_json::Value, _) = self.send(req, "favorites").await?;
-        Ok(rotation)
+        self.send_ack(
+            self.http
+                .put(format!("{}/users/{uid}/favorite", self.v2))
+                .query(&[("version", "3")])
+                .json(&Body { variation_id }),
+            "favorite-add",
+        )
+        .await
+    }
+
+    /// Un-favourite a track. Note this takes the *track* id, not the
+    /// variation id that [`Client::add_favorite`] wants.
+    pub async fn remove_favorite(&self, track_id: &str) -> Result<TokenRotation> {
+        let uid = self.user_id()?;
+        self.send_ack(
+            self.http.delete(format!(
+                "{}/users/{uid}/tracks/{track_id}/favorites",
+                self.v3
+            )),
+            "favorite-remove",
+        )
+        .await
     }
 
     /// Which tracks the user has favourited.
@@ -298,16 +361,36 @@ impl Client {
         }
 
         let uid = self.user_id()?;
-        let (_, rotation): (serde_json::Value, _) = self
-            .send(
-                self.http
-                    .post(format!("{}/users/{uid}/dislikes", self.v2))
-                    .query(&[("version", "3")])
-                    .json(&Body { track_id }),
-                "dislikes",
-            )
-            .await?;
-        Ok(rotation)
+        self.send_ack(
+            self.http
+                .post(format!("{}/users/{uid}/dislikes", self.v2))
+                .query(&[("version", "3")])
+                .json(&Body { track_id }),
+            "dislikes",
+        )
+        .await
+    }
+
+    /// Undo a dislike. Mirrors [`Client::dislike`] exactly.
+    ///
+    /// Worth having: without it a mis-tapped thumbs-down is permanent, and
+    /// the service stops serving a track the user never meant to reject.
+    pub async fn remove_dislike(&self, track_id: &str) -> Result<TokenRotation> {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Body<'a> {
+            track_id: &'a str,
+        }
+
+        let uid = self.user_id()?;
+        self.send_ack(
+            self.http
+                .delete(format!("{}/users/{uid}/dislikes", self.v2))
+                .query(&[("version", "3")])
+                .json(&Body { track_id }),
+            "dislikes-remove",
+        )
+        .await
     }
 
     // ---- account ----

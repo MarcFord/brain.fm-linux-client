@@ -479,29 +479,58 @@ async fn existing_token_is_adopted_without_a_request() {
 
 // ---------------------------------------------------------------- reactions
 
-/// Favouriting carries the id in the path and no body; the verb is the
-/// whole difference between adding and removing.
+/// Adding and removing a favourite are not symmetric, and every guess at
+/// this was wrong until it was captured from the live web app. Adding is
+/// PUT on /v2 with the **variation** id in a body; removing is DELETE on
+/// /v3 with the **track** id in the path.
 #[tokio::test]
-async fn favouriting_posts_and_unfavouriting_deletes() {
+async fn favouriting_puts_the_variation_id_to_v2() {
     let server = MockServer::start().await;
-    let path_ = "/v3/users/PLACEHOLDERUSERID0001/tracks/trk_one/favorites";
-
-    Mock::given(method("POST"))
-        .and(path(path_))
+    Mock::given(method("PUT"))
+        .and(path("/v2/users/PLACEHOLDERUSERID0001/favorite"))
+        .and(query_param("version", "3"))
+        .and(body_json_string(
+            serde_json::json!({ "variationId": "tv_one" }).to_string(),
+        ))
         .respond_with(json(r#"{"status":200,"result":{}}"#.to_string()))
         .expect(1)
         .mount(&server)
         .await;
+
+    client(&server).add_favorite("tv_one").await.unwrap();
+}
+
+#[tokio::test]
+async fn unfavouriting_deletes_the_track_id_from_v3() {
+    let server = MockServer::start().await;
     Mock::given(method("DELETE"))
-        .and(path(path_))
+        .and(path(
+            "/v3/users/PLACEHOLDERUSERID0001/tracks/trk_one/favorites",
+        ))
         .respond_with(json(r#"{"status":200,"result":{}}"#.to_string()))
         .expect(1)
         .mount(&server)
         .await;
 
-    let c = client(&server);
-    c.set_favorite("trk_one", true).await.unwrap();
-    c.set_favorite("trk_one", false).await.unwrap();
+    client(&server).remove_favorite("trk_one").await.unwrap();
+}
+
+/// Without this a mis-tapped thumbs-down is permanent.
+#[tokio::test]
+async fn un_disliking_mirrors_disliking() {
+    let server = MockServer::start().await;
+    Mock::given(method("DELETE"))
+        .and(path("/v2/users/PLACEHOLDERUSERID0001/dislikes"))
+        .and(query_param("version", "3"))
+        .and(body_json_string(
+            serde_json::json!({ "trackId": "trk_one" }).to_string(),
+        ))
+        .respond_with(json(r#"{"status":200,"result":{}}"#.to_string()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    client(&server).remove_dislike("trk_one").await.unwrap();
 }
 
 /// Dislikes are the odd one out: /v2, a query version, and a body.
@@ -527,15 +556,15 @@ async fn disliking_posts_the_track_id_as_a_body() {
 #[tokio::test]
 async fn a_reaction_surfaces_a_rotated_token() {
     let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/v3/users/PLACEHOLDERUSERID0001/tracks/t/favorites"))
+    Mock::given(method("PUT"))
+        .and(path("/v2/users/PLACEHOLDERUSERID0001/favorite"))
         .respond_with(json(
             r#"{"status":200,"result":{},"token":"fresh.jwt.here"}"#.to_string(),
         ))
         .mount(&server)
         .await;
 
-    let rot = client(&server).set_favorite("t", true).await.unwrap();
+    let rot = client(&server).add_favorite("t").await.unwrap();
     assert_eq!(rot.0.as_deref(), Some("fresh.jwt.here"));
 }
 

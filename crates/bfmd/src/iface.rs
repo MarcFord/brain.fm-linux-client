@@ -25,6 +25,10 @@ use crate::{
 #[derive(Debug, Default, Clone)]
 pub struct TrackInfo {
     pub id: String,
+    /// The track *variation* id. Favouriting needs this rather than the
+    /// track id; un-favouriting needs the track id. They are not the same
+    /// field and the API wants a different one for each direction.
+    pub variation_id: String,
     pub name: String,
     pub length: u64,
     pub neural_effect: f64,
@@ -261,6 +265,7 @@ impl BrainFm {
             .unwrap_or_default();
         self.track = Some(TrackInfo {
             id: serving.track.id.clone(),
+            variation_id: serving.track_variation.id.clone(),
             name: serving.track.name.clone(),
             length,
             neural_effect: serving.track_variation.neural_effect_level.unwrap_or(0.0),
@@ -367,6 +372,7 @@ impl BrainFm {
             .unwrap_or_default();
         self.track = Some(TrackInfo {
             id: serving.track.id.clone(),
+            variation_id: serving.track_variation.id.clone(),
             name: serving.track.name.clone(),
             length,
             neural_effect: serving.track_variation.neural_effect_level.unwrap_or(0.0),
@@ -435,7 +441,22 @@ impl BrainFm {
         self.require_auth()?;
         let id = self.resolve_track_id(track_id)?;
 
-        let rot = self.api.set_favorite(&id, on).await.map_err(api_error)?;
+        // Adding takes the variation id, removing takes the track id.
+        let rot = if on {
+            let variation = self
+                .track
+                .as_ref()
+                .filter(|t| t.id == id)
+                .map(|t| t.variation_id.clone())
+                .ok_or_else(|| {
+                    zbus::fdo::Error::Failed(
+                        "favouriting needs the playing track's variation id".into(),
+                    )
+                })?;
+            self.api.add_favorite(&variation).await.map_err(api_error)?
+        } else {
+            self.api.remove_favorite(&id).await.map_err(api_error)?
+        };
         self.persist_rotation(&rot);
 
         if on {
@@ -470,6 +491,15 @@ impl BrainFm {
         if playing_it && self.playback != "idle" {
             self.skip_track(emitter).await?;
         }
+        Ok(())
+    }
+
+    /// Undo a dislike. Interface version 5.
+    pub async fn undislike(&mut self, track_id: &str) -> zbus::fdo::Result<()> {
+        self.require_auth()?;
+        let id = self.resolve_track_id(track_id)?;
+        let rot = self.api.remove_dislike(&id).await.map_err(api_error)?;
+        self.persist_rotation(&rot);
         Ok(())
     }
 

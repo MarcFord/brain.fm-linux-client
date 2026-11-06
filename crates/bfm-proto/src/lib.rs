@@ -33,7 +33,8 @@ pub const INTERFACE: &str = "dev.marcford.BrainFM1";
 ///   existing `a{sv}` is additive: the signature is unchanged and older
 ///   clients simply ignore them.
 /// * 4 — added `Favorite` and `Dislike`; `Track` gained `is_favorite`.
-pub const INTERFACE_VERSION: u32 = 4;
+/// * 5 — added `Undislike`, so a mis-tapped thumbs-down is not permanent.
+pub const INTERFACE_VERSION: u32 = 5;
 
 /// MPRIS bus name, for `playerctl -p bfm` and media keys.
 pub const MPRIS_BUS_NAME: &str = "org.mpris.MediaPlayer2.bfm";
@@ -193,6 +194,11 @@ pub trait BrainFM1 {
     ///
     /// Pass an empty `track_id` for whatever is playing now.
     fn dislike(&self, track_id: &str) -> zbus::Result<()>;
+
+    /// Undo a dislike. Interface version 5.
+    ///
+    /// Pass an empty `track_id` for whatever is playing now.
+    fn undislike(&self, track_id: &str) -> zbus::Result<()>;
 
     /// Set or replace the timer: `"50m"`, `"25m/5m"`, `"25m/5m x4"`, or `""`
     /// to clear.

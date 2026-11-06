@@ -10,6 +10,7 @@
 //! corner, no window management.
 
 mod app;
+mod view;
 
 use clap::Parser;
 

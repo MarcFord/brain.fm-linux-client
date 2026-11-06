@@ -244,6 +244,7 @@ async fn read_state(bfm: &BrainFM1Proxy<'_>) -> State {
 
     State {
         connected: true,
+        interface_version: bfm.interface_version().await.unwrap_or(0),
         authenticated: bfm.authenticated().await.unwrap_or(false),
         playback: Playback::from_wire(&bfm.state().await.unwrap_or_default()),
         mental_state: bfm.mental_state().await.unwrap_or_default(),

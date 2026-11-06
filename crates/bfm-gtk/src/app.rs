@@ -1,8 +1,9 @@
 //! The window.
 
+use crate::view;
 use bfm_ui_core::{
-    Catalog, Client, Command, Effort, Filters, Playback, SessionMode, State, Update,
-    format_duration, needs_login, share_text,
+    Catalog, Client, Command, Effort, Filters, Playback, SessionMode, State, Update, needs_login,
+    share_text,
 };
 use relm4::{
     ComponentParts, ComponentSender, RelmWidgetExt, SimpleComponent,
@@ -109,7 +110,7 @@ impl SimpleComponent for App {
                     // toast: "sign in" is a state, not a notification.
                     gtk::Revealer {
                         #[watch]
-                        set_reveal_child: model.error.is_some() || model.notice.is_some(),
+                        set_reveal_child: model.has_banner(),
                         gtk::Box {
                             set_orientation: gtk::Orientation::Horizontal,
                             set_spacing: 8,
@@ -118,7 +119,7 @@ impl SimpleComponent for App {
 
                             gtk::Image {
                                 #[watch]
-                                set_icon_name: Some(if model.error.is_some() {
+                                set_icon_name: Some(if model.banner_is_error() {
                                     "dialog-warning-symbolic"
                                 } else {
                                     "object-select-symbolic"
@@ -129,7 +130,7 @@ impl SimpleComponent for App {
                                 set_xalign: 0.0,
                                 set_hexpand: true,
                                 #[watch]
-                                set_label: model.banner_text(),
+                                set_label: &model.banner_text(),
                             },
                             gtk::Button {
                                 set_icon_name: "window-close-symbolic",
@@ -574,50 +575,46 @@ impl SimpleComponent for App {
 }
 
 impl App {
-    fn banner_text(&self) -> &str {
-        self.error
-            .as_deref()
-            .or(self.notice.as_deref())
-            .unwrap_or("")
+    fn banner(&self) -> Option<(bool, String)> {
+        view::banner(
+            self.state
+                .daemon_is_stale()
+                .then(|| self.state.stale_daemon_message()),
+            self.error.as_deref(),
+            self.notice.as_deref(),
+        )
+    }
+
+    fn banner_text(&self) -> String {
+        self.banner().map(|(_, t)| t).unwrap_or_default()
+    }
+
+    fn banner_is_error(&self) -> bool {
+        self.banner().map(|(e, _)| e).unwrap_or(false)
+    }
+
+    fn has_banner(&self) -> bool {
+        self.banner().is_some()
     }
 
     fn is_favorite(&self) -> bool {
         self.state.track.as_ref().is_some_and(|t| t.is_favorite)
     }
 
-    /// Adwaita has no outline heart, so the unfavourited state uses the
-    /// emblem and relies on colour for the difference.
     fn favorite_icon(&self) -> &'static str {
-        if self.is_favorite() {
-            "heart-filled-symbolic"
-        } else {
-            "emblem-favorite-symbolic"
-        }
+        view::favorite_icon(self.is_favorite())
     }
 
     fn favorite_classes(&self) -> &'static [&'static str] {
-        if self.is_favorite() {
-            &["flat", "circular", "bfm-faved"]
-        } else {
-            &["flat", "circular"]
-        }
+        view::favorite_classes(self.is_favorite())
     }
 
     fn favorite_tooltip(&self) -> &'static str {
-        if self.is_favorite() {
-            "Remove from favourites"
-        } else {
-            "Add to favourites"
-        }
+        view::favorite_tooltip(self.is_favorite())
     }
 
-    /// Only dim when there is actually an image behind the controls.
     fn scrim_classes(&self) -> &'static [&'static str] {
-        if self.state.art_file().is_some() {
-            &["bfm-scrim"]
-        } else {
-            &[]
-        }
+        view::scrim_classes(self.state.art_file().is_some())
     }
 
     /// `None` on the very first pass, before the stack has its children.
@@ -626,90 +623,39 @@ impl App {
     }
 
     fn page(&self) -> &'static str {
-        if !self.connected {
-            "connecting"
-        } else if !self.state.authenticated {
-            "signin"
-        } else if self.state.playback == Playback::Idle {
-            "browse"
-        } else {
-            "player"
-        }
+        view::page(
+            self.connected,
+            self.state.authenticated,
+            self.state.playback,
+        )
     }
 
     fn subtitle(&self) -> String {
         match self.page() {
-            "player" => {
-                let s = &self.state.mental_state;
-                if s.is_empty() {
-                    String::new()
-                } else {
-                    title_case(s)
-                }
-            }
+            "player" => view::title_case(&self.state.mental_state),
             _ => String::new(),
         }
     }
 
     fn track_name(&self) -> String {
-        self.state
-            .track
-            .as_ref()
-            .map(|t| t.name.clone())
-            .unwrap_or_else(|| bfm_ui_core::IDLE_LABEL.to_owned())
+        view::track_name(self.state.track.as_ref())
     }
 
     fn track_detail(&self) -> String {
-        match (&self.state.track, self.state.playback) {
-            (_, Playback::Buffering) => "Buffering…".to_owned(),
-            (Some(t), _) if t.neural_effect > 0.0 => {
-                format!("Neural effect {:.0}%", t.neural_effect * 100.0)
-            }
-            _ => String::new(),
-        }
+        view::track_detail(self.state.track.as_ref(), self.state.playback)
     }
 
     fn position_label(&self) -> String {
         let len = self.state.track.as_ref().map(|t| t.length).unwrap_or(0);
-        format!(
-            "{} / {}",
-            format_duration(self.state.position),
-            format_duration(len)
-        )
+        view::position_label(self.state.position, len)
     }
 
     fn play_icon(&self) -> &'static str {
-        if self.state.playback.toggles_to_play() {
-            "media-playback-start-symbolic"
-        } else {
-            "media-playback-pause-symbolic"
-        }
+        view::play_icon(self.state.playback)
     }
 
     fn timer_label(&self) -> String {
-        let t = &self.state.timer;
-        if !t.is_running() {
-            return format!("{} · running until stopped", self.mode);
-        }
-        let phase = title_case(&t.phase);
-        if t.cycles > 1 {
-            format!(
-                "{phase} · {} left · {}/{}",
-                format_duration(t.remaining),
-                t.cycle,
-                t.cycles
-            )
-        } else {
-            format!("{phase} · {} left", format_duration(t.remaining))
-        }
-    }
-}
-
-fn title_case(s: &str) -> String {
-    let mut c = s.chars();
-    match c.next() {
-        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-        None => String::new(),
+        view::timer_label(&self.state.timer, self.mode)
     }
 }
 
@@ -1011,7 +957,7 @@ fn present_start_dialog(
 
     // ---- assemble ----
     let dialog = adw::Dialog::builder()
-        .title(title_case(state))
+        .title(view::title_case(state))
         .content_width(420)
         .content_height(640)
         .build();

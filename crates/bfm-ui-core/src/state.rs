@@ -81,6 +81,12 @@ impl Timer {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct State {
     pub connected: bool,
+    /// `InterfaceVersion` of the daemon actually answering.
+    ///
+    /// A long-running daemon easily outlives the binary on disk, and the
+    /// symptom is silent: features the front-end was built against simply
+    /// do nothing. Carrying the version lets a client say so.
+    pub interface_version: u32,
     pub authenticated: bool,
     pub playback: Playback,
     pub mental_state: String,
@@ -92,6 +98,27 @@ pub struct State {
 }
 
 impl State {
+    /// True when the daemon is older than the interface this build expects.
+    ///
+    /// Compared against `bfm_proto::INTERFACE_VERSION`, which is the version
+    /// this front-end was compiled against — so an upgrade that forgets to
+    /// restart the daemon is reported rather than quietly degrading.
+    pub fn daemon_is_stale(&self) -> bool {
+        self.connected && self.interface_version < bfm_proto::INTERFACE_VERSION
+    }
+
+    /// Why features are missing, phrased as something actionable.
+    pub fn stale_daemon_message(&self) -> String {
+        format!(
+            "The running Brain.fm daemon is interface version {} but this app \
+             expects {}. It is still running an older binary — restart it with \
+             `systemctl --user restart bfmd`, or stop the `bfmd` process and let \
+             D-Bus start the new one.",
+            self.interface_version,
+            bfm_proto::INTERFACE_VERSION
+        )
+    }
+
     /// Cached artwork to render behind the player, if the daemon has any.
     ///
     /// Checks the file still exists: the cache lives under `XDG_CACHE_HOME`
@@ -390,6 +417,59 @@ mod tests {
         };
         assert!(t.is_running());
         assert!((t.fraction() - 0.75).abs() < 1e-9);
+    }
+
+    /// The failure this exists to catch: a daemon that outlived its binary
+    /// serves an older interface, and every newer feature silently does
+    /// nothing.
+    #[test]
+    fn an_older_daemon_is_reported_as_stale() {
+        let s = State {
+            connected: true,
+            interface_version: 1,
+            ..Default::default()
+        };
+        assert!(s.daemon_is_stale());
+        let msg = s.stale_daemon_message();
+        assert!(
+            msg.contains("restart"),
+            "the message must say what to do: {msg}"
+        );
+        assert!(msg.contains('1'), "and which version is running: {msg}");
+    }
+
+    #[test]
+    fn a_current_daemon_is_not_stale() {
+        let s = State {
+            connected: true,
+            interface_version: bfm_proto::INTERFACE_VERSION,
+            ..Default::default()
+        };
+        assert!(!s.daemon_is_stale());
+    }
+
+    /// A newer daemon than the front-end is fine: the contract is additive,
+    /// so unknown methods simply go unused.
+    #[test]
+    fn a_newer_daemon_is_not_stale() {
+        let s = State {
+            connected: true,
+            interface_version: bfm_proto::INTERFACE_VERSION + 10,
+            ..Default::default()
+        };
+        assert!(!s.daemon_is_stale());
+    }
+
+    /// Before the first reply there is no version to judge, and claiming
+    /// "stale" while merely connecting would be wrong.
+    #[test]
+    fn a_disconnected_daemon_is_not_called_stale() {
+        let s = State {
+            connected: false,
+            interface_version: 0,
+            ..Default::default()
+        };
+        assert!(!s.daemon_is_stale());
     }
 
     #[test]

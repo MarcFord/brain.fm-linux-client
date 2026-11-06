@@ -58,7 +58,7 @@ endif
 CORE_TARGETS := bfmd bfm
 PKG_ARGS     := $(foreach t,$(CORE_TARGETS) $(GUI_TARGETS),-p $(t))
 
-.PHONY: all build detect install uninstall check test smoke-layer package clean help
+.PHONY: all build detect install uninstall check test smoke-layer smoke-install smoke package clean help
 
 all: build
 
@@ -139,6 +139,14 @@ uninstall:
 smoke-layer:
 	@BFM_GTK_BIN=$(TARGETDIR)/bfm-gtk ./dist/smoke-layer.sh; \
 	  rc=$$?; [ $$rc -eq 77 ] && echo "(skipped)" && exit 0; exit $$rc
+
+## smoke-install: prove `make install` yields a tree that D-Bus can activate
+smoke-install:
+	@./dist/smoke-install.sh; rc=$$?; \
+	  [ $$rc -eq 77 ] && echo "(skipped)" && exit 0; exit $$rc
+
+## smoke: every smoke check
+smoke: smoke-install smoke-layer
 
 ## package: build .deb and .rpm packages (needs nfpm)
 PKGVERSION ?= $(shell sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)

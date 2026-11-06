@@ -104,7 +104,13 @@ impl State {
     /// this front-end was compiled against — so an upgrade that forgets to
     /// restart the daemon is reported rather than quietly degrading.
     pub fn daemon_is_stale(&self) -> bool {
-        self.connected && self.interface_version < bfm_proto::INTERFACE_VERSION
+        // Version 0 means the property could not be read at all, which is a
+        // daemon that is not answering — not an old one. Reporting "restart
+        // your old binary" when nothing is running sends the user chasing
+        // the wrong problem.
+        self.connected
+            && self.interface_version > 0
+            && self.interface_version < bfm_proto::INTERFACE_VERSION
     }
 
     /// Why features are missing, phrased as something actionable.
@@ -462,6 +468,22 @@ mod tests {
 
     /// Before the first reply there is no version to judge, and claiming
     /// "stale" while merely connecting would be wrong.
+    /// A failed property read yields 0. That is "not answering", not
+    /// "old", and the two need different advice.
+    #[test]
+    fn an_unreadable_version_is_not_reported_as_stale() {
+        let s = State {
+            connected: true,
+            interface_version: 0,
+            ..Default::default()
+        };
+        assert!(
+            !s.daemon_is_stale(),
+            "version 0 means the read failed; telling the user to restart an \
+             old binary sends them after the wrong problem"
+        );
+    }
+
     #[test]
     fn a_disconnected_daemon_is_not_called_stale() {
         let s = State {

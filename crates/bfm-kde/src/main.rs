@@ -1,6 +1,11 @@
 mod bridge;
 
+use clap::Parser;
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QString, QUrl};
+
+#[derive(Parser)]
+#[command(name = "bfm-kde", version, about = "Brain.fm for Linux (Qt/Kirigami)")]
+struct Cli {}
 
 /// The module keeps the source directory in the resource path. Verified
 /// against the resource names compiled into the binary, not inferred from
@@ -22,6 +27,12 @@ unsafe extern "C" {
 const ICON_NAME: &str = "dev.marcford.bfm";
 
 fn main() {
+    // Parsed before QGuiApplication is constructed, so --version and --help
+    // answer and exit rather than starting a GUI. Qt reads argv itself, and
+    // the GTK front-end hit exactly this: the toolkit swallowed the flag
+    // before the binary could act on it.
+    Cli::parse();
+
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_env("BFM_LOG")

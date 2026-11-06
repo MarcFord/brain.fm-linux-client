@@ -384,6 +384,7 @@ name = "bfm-kde"
 version = "0.1.0"
 dependencies = [
  "bfm-ui-core",
+ "clap",
  "cxx",
  "cxx-qt",
  "cxx-qt-build",
@@ -434,6 +435,7 @@ dependencies = [
  "bfm-api",
  "bfm-player",
  "bfm-proto",
+ "clap",
  "color-eyre",
  "keyring",
  "serde",

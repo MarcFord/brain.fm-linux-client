@@ -12,6 +12,7 @@ use bfmd::{hooks, iface, mpris, store};
 use std::time::Duration;
 
 use bfm_proto::{BUS_NAME, INTERFACE_VERSION, OBJECT_PATH};
+use clap::Parser;
 use color_eyre::{Result, eyre::WrapErr};
 use zbus::connection;
 
@@ -22,8 +23,22 @@ use crate::iface::BrainFm;
 /// to the second without waking the CPU needlessly.
 const TICK: Duration = Duration::from_secs(1);
 
+/// Even a daemon nobody invokes by hand needs these.
+///
+/// Without argument parsing `bfmd --version` started the daemon and blocked
+/// forever, and an unknown flag was ignored rather than reported — both
+/// surprising for something a distro package puts on PATH.
+#[derive(Parser)]
+#[command(
+    name = "bfmd",
+    version,
+    about = "Brain.fm daemon (unofficial). Normally started on demand by D-Bus."
+)]
+struct Cli {}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    Cli::parse();
     color_eyre::install()?;
     tracing_subscriber::fmt()
         .with_env_filter(

@@ -18,6 +18,7 @@ path = "src/main.rs"
 
 [dependencies]
 bfm-api.workspace = true
+clap.workspace = true
 bfm-player.workspace = true
 bfm-proto.workspace = true
 color-eyre.workspace = true

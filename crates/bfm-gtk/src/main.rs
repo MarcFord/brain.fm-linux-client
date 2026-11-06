@@ -10,7 +10,6 @@
 //! corner, no window management.
 
 mod app;
-mod steps;
 mod view;
 mod wizard;
 

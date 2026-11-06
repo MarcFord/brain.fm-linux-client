@@ -5,7 +5,7 @@
 //! need a follow-up — and branching buried in signal handlers is both easy
 //! to get wrong and impossible to test.
 
-use bfm_ui_core::SessionMode;
+use crate::mode::SessionMode;
 
 /// One question in the flow.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

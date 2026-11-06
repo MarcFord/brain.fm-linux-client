@@ -10,12 +10,18 @@
 
 pub mod browser;
 pub mod client;
+pub mod display;
 pub mod filters;
 pub mod mode;
 pub mod state;
+pub mod steps;
 
 pub use browser::{Found, find_session};
 pub use client::{Client, Command, Update, needs_login, split_error};
+pub use display::{
+    banner, page, position_label, timer_label, title_case, track_detail, track_name,
+};
 pub use filters::{Catalog, Effort, Filters};
 pub use mode::{SessionLength, SessionMode, fallback_lengths};
 pub use state::{IDLE_LABEL, Playback, State, Timer, Track, format_duration, share_text};
+pub use steps::Step;

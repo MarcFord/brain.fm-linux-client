@@ -11,17 +11,17 @@
 
 use std::{cell::RefCell, rc::Rc};
 
-use bfm_ui_core::{Catalog, Effort, Filters, SessionMode};
+use bfm_ui_core::{
+    Catalog, Effort, Filters, SessionMode,
+    steps::{self, Step},
+};
 use relm4::{
     ComponentSender,
     adw::{self, prelude::*},
     gtk,
 };
 
-use crate::{
-    app::{App, Msg},
-    steps::{self, Step},
-};
+use crate::app::{App, Msg};
 
 /// Answers collected so far.
 #[derive(Default)]
@@ -133,7 +133,7 @@ pub fn present_start_wizard(
     let nav = adw::NavigationView::new();
 
     let dialog = adw::Dialog::builder()
-        .title(crate::view::title_case(state))
+        .title(bfm_ui_core::title_case(state))
         .content_width(400)
         .content_height(560)
         .child(&nav)

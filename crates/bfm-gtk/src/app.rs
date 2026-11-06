@@ -600,7 +600,7 @@ impl SimpleComponent for App {
 
 impl App {
     fn banner(&self) -> Option<(bool, String)> {
-        view::banner(
+        bfm_ui_core::display::banner(
             self.state
                 .daemon_is_stale()
                 .then(|| self.state.stale_daemon_message()),
@@ -634,7 +634,7 @@ impl App {
     }
 
     fn favorite_tooltip(&self) -> &'static str {
-        view::favorite_tooltip(self.is_favorite())
+        bfm_ui_core::display::favorite_tooltip(self.is_favorite())
     }
 
     fn scrim_classes(&self) -> &'static [&'static str] {
@@ -647,7 +647,7 @@ impl App {
     }
 
     fn page(&self) -> &'static str {
-        view::page(
+        bfm_ui_core::display::page(
             self.connected,
             self.state.authenticated,
             self.state.playback,
@@ -656,22 +656,22 @@ impl App {
 
     fn subtitle(&self) -> String {
         match self.page() {
-            "player" => view::title_case(&self.state.mental_state),
+            "player" => bfm_ui_core::display::title_case(&self.state.mental_state),
             _ => String::new(),
         }
     }
 
     fn track_name(&self) -> String {
-        view::track_name(self.state.track.as_ref())
+        bfm_ui_core::display::track_name(self.state.track.as_ref())
     }
 
     fn track_detail(&self) -> String {
-        view::track_detail(self.state.track.as_ref(), self.state.playback)
+        bfm_ui_core::display::track_detail(self.state.track.as_ref(), self.state.playback)
     }
 
     fn position_label(&self) -> String {
         let len = self.state.track.as_ref().map(|t| t.length).unwrap_or(0);
-        view::position_label(self.state.position, len)
+        bfm_ui_core::display::position_label(self.state.position, len)
     }
 
     fn play_icon(&self) -> &'static str {
@@ -679,7 +679,7 @@ impl App {
     }
 
     fn timer_label(&self) -> String {
-        view::timer_label(&self.state.timer, self.mode)
+        bfm_ui_core::display::timer_label(&self.state.timer, self.mode)
     }
 }
 

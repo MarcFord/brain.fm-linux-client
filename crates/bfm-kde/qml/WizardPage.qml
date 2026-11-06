@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls as Controls
 import org.kde.kirigami as Kirigami
+import org.kde.kirigami.delegates as Delegates
 
 /// One single-choice question. Tapping an answer advances immediately —
 /// that is what makes the flow feel like clicking through rather than
@@ -30,13 +31,13 @@ Kirigami.ScrollablePage {
 
         Repeater {
             model: page.model
-            delegate: Kirigami.BasicListItem {
+            delegate: Delegates.SubtitleDelegate {
                 required property string modelData
                 required property int index
                 Layout.fillWidth: true
                 text: modelData
                 subtitle: index < page.subtitles.length ? page.subtitles[index] : ""
-                icon: "go-next"
+                icon.name: "go-next"
                 onClicked: page.chosen(index)
             }
         }

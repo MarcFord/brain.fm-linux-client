@@ -237,50 +237,43 @@ Milestone 6 is the real finish line — it's the one the next project depends on
   README and `docs/api.md`; write our own implementation rather than vendoring theirs.
 
 
-## Known broken: the KDE front-end does not display
+## The KDE front-end: what was actually wrong
 
-`bfm-kde` builds, starts, connects to Wayland and runs its event loop, but
-creates no window. **It has never displayed anything.**
+Fixed. Three separate faults, found only once Qt could report for itself.
 
-### The standout clue
+1. **`visible: false`.** QQC2's `ApplicationWindow`, which Kirigami's
+   inherits, defaults to invisible. No window, no error.
+2. **`Kirigami.BasicListItem` was removed in Kirigami 6.** The replacement
+   is `SubtitleDelegate`, in the separate `org.kde.kirigami.delegates`
+   module. This aborted the whole component load.
+3. **cxx-qt does not camelCase anything.** Properties and invokables keep
+   their Rust names, so QML must say `session.track_name` and
+   `session.connect_daemon()`. Thirty-four references were wrong.
 
-`engine.load()` on a **deliberately nonexistent URL** also produces no
-warning. A working `QQmlApplicationEngine` always complains about a missing
-component. Zero diagnostics for a guaranteed-bad load says the problem is
-upstream of our QML, and it is what blocks every other line of enquiry.
+### The thing that unblocked it
 
-### Ruled out, each by test rather than by reasoning
+A Qt message handler, installed through a small C++ shim before anything
+else runs. Until then `engine.load()` on a *deliberately nonexistent* URL
+produced no output whatsoever, so there was nothing to chase and every step
+was guesswork. With the handler in place the remaining two faults were
+named precisely, by file and line, in minutes.
 
-| Suspect | How it was eliminated |
-|---|---|
-| Our QML | `qml6` renders the exact same `Probe.qml` and shows a window |
-| Kirigami, Qt, Wayland | Same — all work outside our binary |
-| The qrc path | Read the UTF-16 resource names out of the compiled binary: it is `qrc:/qt/qml/dev/marcford/bfm/qml/Main.qml`, which is what the code uses |
-| `visible: false` | QQC2's `ApplicationWindow` does default to invisible and Kirigami inherits it — a real bug, now fixed, but not the cause |
-| Release-mode log suppression | The debug build behaves identically |
-| Platform plugin | `wayland` and `xcb` forced individually; both plugins present; no window either way |
-| A null app or engine | Both non-null; `application_name()` returns `"bfm-kde"`, so the singleton is live |
-| qrc vs filesystem | A `file://` URL to a real, known-good file behaves the same |
-| Registration order | Calling `init_qml_module!` after `QGuiApplication` changes nothing |
-| Our own `Main.qml` complexity | A five-line Kirigami window from the same module also shows nothing |
+`BFM_QT_DEBUG=1` additionally turns on Qt's own categories, which is how
+the platform plugin, QML import resolution and the Quick scene graph were
+confirmed healthy.
 
-### Where to pick it up
+### A verification failure worth remembering
 
-1. **Install a Qt message handler** (`qInstallMessageHandler`) through a
-   small C++ shim. Until Qt can report, everything else is guesswork — and
-   the silence on a bogus URL suggests its output never reaches stderr in
-   this binary.
-2. Connect `objectCreationFailed` / `objectCreated`. cxx-qt generates
-   connect helpers for `#[qsignal]`s, but `on_object_created` did not
-   resolve on `Pin<&mut QQmlApplicationEngine>` — worth finding the correct
-   form, since it answers directly whether the component instantiates.
-3. Build the upstream `qml_minimal` example against this exact Qt and
-   cxx-qt. If it also shows nothing, the fault is environmental rather than
-   ours, which would redirect the whole search.
+Most of the hunt was wasted. The window had been appearing since fault 1
+was fixed, but the check looked for a window whose class contained
+`marcford` — which is right for GTK, where the class is the app id, and
+wrong for Qt, which derives its Wayland `app_id` from the application name
+(`bfm-kde`). The test could not have seen success.
 
-### A verification lesson worth keeping
+Two lessons, both now applied: a smoke test must assert the thing it claims
+to assert, and the first move on a silent failure is to make the system
+able to speak, not to generate hypotheses.
 
-This was originally reported as working. The test ran it offscreen and
-concluded success because the process survived eight seconds —
-`QGuiApplication::exec` runs forever whether or not a window exists. For a
-GUI, the only smoke test that means anything is *did a window appear*.
+`QGuiApplication::setDesktopFileName` now sets the `app_id` to
+`dev.marcford.bfm.kde`, matching the installed desktop entry, so the window
+picks up its icon and any compositor rules.

@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls as Controls
 import org.kde.kirigami as Kirigami
+import org.kde.kirigami.delegates as Delegates
 import dev.marcford.bfm
 
 Kirigami.ApplicationWindow {
@@ -18,7 +19,7 @@ Kirigami.ApplicationWindow {
 
     Session {
         id: session
-        Component.onCompleted: session.connectDaemon()
+        Component.onCompleted: session.connect_daemon()
     }
 
     // Answers collected by the wizard, mirroring the GTK flow.
@@ -33,7 +34,7 @@ Kirigami.ApplicationWindow {
     }
 
     pageStack.initialPage: Kirigami.Page {
-        title: session.mentalState.length > 0 ? session.mentalState : "Brain.fm"
+        title: session.mental_state.length > 0 ? session.mental_state : "Brain.fm"
         padding: 0
 
         ColumnLayout {
@@ -43,12 +44,12 @@ Kirigami.ApplicationWindow {
             Kirigami.InlineMessage {
                 Layout.fillWidth: true
                 Layout.margins: Kirigami.Units.smallSpacing
-                visible: session.bannerText.length > 0
-                text: session.bannerText
-                type: session.bannerIsError ? Kirigami.MessageType.Warning
+                visible: session.banner_text.length > 0
+                text: session.banner_text
+                type: session.banner_is_error ? Kirigami.MessageType.Warning
                                             : Kirigami.MessageType.Positive
                 showCloseButton: true
-                onVisibleChanged: if (!visible) session.dismissBanner()
+                onVisibleChanged: if (!visible) session.dismiss_banner()
             }
 
             StackLayout {
@@ -78,7 +79,7 @@ Kirigami.ApplicationWindow {
                     helpfulAction: Kirigami.Action {
                         text: "Use my browser session"
                         icon.name: "globe"
-                        onTriggered: session.signIn()
+                        onTriggered: session.sign_in()
                     }
                 }
 
@@ -96,12 +97,12 @@ Kirigami.ApplicationWindow {
                                 { slug: "sleep",    name: "Sleep",    hint: "Drift off" },
                                 { slug: "meditate", name: "Meditate", hint: "Settle the mind" }
                             ]
-                            delegate: Kirigami.BasicListItem {
+                            delegate: Delegates.SubtitleDelegate {
                                 required property var modelData
                                 Layout.fillWidth: true
                                 text: modelData.name
                                 subtitle: modelData.hint
-                                icon: "media-playback-start"
+                                icon.name: "media-playback-start"
                                 onClicked: {
                                     draft.state = modelData.slug
                                     draft.activityIndex = 0
@@ -109,7 +110,7 @@ Kirigami.ApplicationWindow {
                                     draft.genres = []
                                     draft.modeIndex = 0
                                     draft.timerSpec = ""
-                                    session.fetchCatalog(modelData.slug)
+                                    session.fetch_catalog(modelData.slug)
                                     root.pageStack.push(activityPage)
                                 }
                             }
@@ -121,8 +122,8 @@ Kirigami.ApplicationWindow {
                 Item {
                     Image {
                         anchors.fill: parent
-                        source: session.artPath
-                        visible: session.artPath.length > 0
+                        source: session.art_path
+                        visible: session.art_path.length > 0
                         fillMode: Image.PreserveAspectCrop
                         asynchronous: true
                     }
@@ -130,7 +131,7 @@ Kirigami.ApplicationWindow {
                     // legibility cannot be left to the image.
                     Rectangle {
                         anchors.fill: parent
-                        visible: session.artPath.length > 0
+                        visible: session.art_path.length > 0
                         gradient: Gradient {
                             GradientStop { position: 0.0; color: "#73000000" }
                             GradientStop { position: 1.0; color: "#e0000000" }
@@ -146,29 +147,29 @@ Kirigami.ApplicationWindow {
                         Kirigami.Heading {
                             Layout.fillWidth: true
                             level: 1
-                            text: session.trackName
+                            text: session.track_name
                             wrapMode: Text.WordWrap
                             horizontalAlignment: Text.AlignHCenter
-                            color: session.artPath.length > 0 ? "white" : Kirigami.Theme.textColor
+                            color: session.art_path.length > 0 ? "white" : Kirigami.Theme.textColor
                         }
                         Controls.Label {
                             Layout.fillWidth: true
-                            text: session.trackDetail
+                            text: session.track_detail
                             horizontalAlignment: Text.AlignHCenter
                             opacity: 0.75
-                            color: session.artPath.length > 0 ? "white" : Kirigami.Theme.textColor
+                            color: session.art_path.length > 0 ? "white" : Kirigami.Theme.textColor
                         }
 
                         Controls.ProgressBar {
                             Layout.fillWidth: true
                             from: 0; to: 1
-                            value: session.trackFraction
+                            value: session.track_fraction
                         }
                         Controls.Label {
                             Layout.alignment: Qt.AlignHCenter
-                            text: session.positionLabel
+                            text: session.position_label
                             opacity: 0.75
-                            color: session.artPath.length > 0 ? "white" : Kirigami.Theme.textColor
+                            color: session.art_path.length > 0 ? "white" : Kirigami.Theme.textColor
                         }
 
                         // Reactions
@@ -183,12 +184,13 @@ Kirigami.ApplicationWindow {
                                 onClicked: session.dislike()
                             }
                             Controls.ToolButton {
-                                icon.name: session.isFavorite ? "favorite" : "list-add"
+                                icon.name: "emblem-favorite"
+                                highlighted: session.is_favorite
                                 display: Controls.AbstractButton.IconOnly
-                                Controls.ToolTip.text: session.isFavorite ? "Remove from favourites"
+                                Controls.ToolTip.text: session.is_favorite ? "Remove from favourites"
                                                                           : "Add to favourites"
                                 Controls.ToolTip.visible: hovered
-                                onClicked: session.toggleFavorite()
+                                onClicked: session.toggle_favorite()
                             }
                             Controls.ToolButton {
                                 icon.name: "edit-copy"
@@ -198,7 +200,7 @@ Kirigami.ApplicationWindow {
                                 onClicked: {
                                     // No per-track URL exists, so this copies
                                     // rather than linking. See docs/api.md.
-                                    hiddenCopy.text = session.shareText()
+                                    hiddenCopy.text = session.share_text()
                                     hiddenCopy.selectAll()
                                     hiddenCopy.copy()
                                 }
@@ -214,11 +216,11 @@ Kirigami.ApplicationWindow {
                                 onClicked: session.stop()
                             }
                             Controls.Button {
-                                icon.name: session.page === "player" && session.trackDetail === "Buffering…"
+                                icon.name: session.page === "player" && session.track_detail === "Buffering…"
                                            ? "media-playback-pause" : "media-playback-start"
                                 text: ""
                                 highlighted: true
-                                onClicked: session.playPause()
+                                onClicked: session.play_pause()
                             }
                             Controls.ToolButton {
                                 icon.name: "media-skip-forward"
@@ -230,14 +232,14 @@ Kirigami.ApplicationWindow {
                             Layout.fillWidth: true
                             from: 0; to: 1
                             value: session.volume
-                            onMoved: session.applyVolume(value)
+                            onMoved: session.apply_volume(value)
                         }
 
-                        Kirigami.BasicListItem {
+                        Delegates.SubtitleDelegate {
                             Layout.fillWidth: true
                             text: "Session length"
-                            subtitle: session.timerLabel
-                            icon: "clock"
+                            subtitle: session.timer_label
+                            icon.name: "clock"
                             onClicked: {
                                 draft.state = ""
                                 root.pageStack.push(lengthKindPage)
@@ -262,7 +264,7 @@ Kirigami.ApplicationWindow {
         WizardPage {
             heading: "What are you doing?"
             explanation: "Pick the activity closest to your task."
-            model: session.activityNames
+            model: session.activity_names
             onChosen: function (index) {
                 draft.activityIndex = index
                 root.pageStack.push(effortPage)
@@ -298,7 +300,7 @@ Kirigami.ApplicationWindow {
                 }
                 Repeater {
                     id: genreRepeater
-                    model: session.genreNames
+                    model: session.genre_names
                     delegate: Controls.CheckBox {
                         required property string modelData
                         text: modelData
@@ -333,7 +335,7 @@ Kirigami.ApplicationWindow {
             onChosen: function (index) {
                 draft.modeIndex = index
                 // The same sequencing the GTK wizard uses, decided in Rust.
-                const nextStep = session.stepAfter(3, index)
+                const nextStep = session.step_after(3, index)
                 if (nextStep === -1) {
                     draft.timerSpec = ""
                     root.finish()
@@ -359,14 +361,14 @@ Kirigami.ApplicationWindow {
                     Layout.bottomMargin: Kirigami.Units.largeSpacing
                 }
                 Repeater {
-                    model: session.lengthLabels
-                    delegate: Kirigami.BasicListItem {
+                    model: session.length_labels
+                    delegate: Delegates.SubtitleDelegate {
                         required property string modelData
                         required property int index
                         Layout.fillWidth: true
                         text: modelData
                         onClicked: {
-                            const secs = session.lengthSeconds(index)
+                            const secs = session.length_seconds(index)
                             draft.timerSpec = Math.round(secs / 60) + "m"
                             root.finish()
                         }
@@ -437,10 +439,10 @@ Kirigami.ApplicationWindow {
     /// timer when the wizard was opened mid-session.
     function finish() {
         if (draft.state.length > 0) {
-            session.startConfigured(draft.state, draft.activityIndex, draft.effort,
+            session.start_configured(draft.state, draft.activityIndex, draft.effort,
                                     draft.genres.join("\n"), draft.timerSpec)
         } else {
-            session.setTimerSpec(draft.timerSpec)
+            session.set_timer_spec(draft.timerSpec)
         }
         while (root.pageStack.depth > 1) root.pageStack.pop()
     }

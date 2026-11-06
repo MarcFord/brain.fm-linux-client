@@ -7,6 +7,7 @@ fn main() {
         "qml/Probe.qml",
     ]))
     .file("src/bridge.rs")
+    .cpp_file("src/qt_log.cpp")
     .qt_module("Quick")
     .build();
 }

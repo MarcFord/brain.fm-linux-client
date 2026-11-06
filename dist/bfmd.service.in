@@ -1,6 +1,6 @@
 # systemd user unit, D-Bus activated.
-#   install:  cp dist/bfmd.service ~/.config/systemd/user/
-#             systemctl --user daemon-reload
+#   Installed by `make install`; @BINDIR@ is substituted for the real
+#   prefix, because a hard-coded path is wrong for every prefix but one.
 #
 # There is deliberately no [Install] WantedBy: the daemon is started on demand
 # by the first D-Bus call and should not run before anyone asks for music.
@@ -13,7 +13,7 @@ PartOf=graphical-session.target
 [Service]
 Type=dbus
 BusName=dev.marcford.bfm
-ExecStart=%h/.cargo/bin/bfmd
+ExecStart=@BINDIR@/bfmd
 Restart=on-failure
 RestartSec=2
 

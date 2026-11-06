@@ -1,8 +1,8 @@
 //! The window.
 
-use crate::view;
+use crate::{view, wizard};
 use bfm_ui_core::{
-    Catalog, Client, Command, Effort, Filters, Playback, SessionMode, State, Update, needs_login,
+    Catalog, Client, Command, Filters, Playback, SessionMode, State, Update, needs_login,
     share_text,
 };
 use relm4::{
@@ -41,12 +41,22 @@ pub struct App {
     /// Choices for the next session. Per-state, so they reset when the
     /// state changes rather than carrying Sleep's genres into Focus.
     filters: Filters,
-    /// The state whose catalog we are waiting on, if any.
-    pending_start: Option<&'static str>,
+    /// What to open once the catalog arrives.
+    pending: Option<Pending>,
+    /// Last catalog fetched, so changing the length mid-session does not
+    /// need another round trip.
+    catalog: Option<Catalog>,
     /// A short confirmation, distinct from an error.
     notice: Option<String>,
     /// Set once the view has been built and the stack has its pages.
     stack_ready: bool,
+}
+
+/// Which wizard is waiting on a catalog fetch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Pending {
+    Start(&'static str),
+    Length,
 }
 
 #[derive(Debug)]
@@ -395,7 +405,8 @@ impl SimpleComponent for App {
             window: root.clone(),
             mode: SessionMode::default(),
             filters: Filters::default(),
-            pending_start: None,
+            pending: None,
+            catalog: None,
             notice: None,
             state: State::default(),
             connected: false,
@@ -474,19 +485,17 @@ impl SimpleComponent for App {
                     };
                 }
                 Update::Catalog(catalog) => {
-                    // Only act on the catalog we actually asked for; a
-                    // stale reply must not pop a dialog for another state.
-                    if let Some(state) = self.pending_start.take()
-                        && catalog.state == state
-                    {
-                        present_start_dialog(
-                            &self.window,
-                            state,
-                            &catalog,
-                            &self.filters,
-                            self.mode,
-                            &sender,
-                        );
+                    self.catalog = Some((*catalog).clone());
+                    match self.pending.take() {
+                        // A stale reply must not open a wizard for a state
+                        // the user is no longer choosing.
+                        Some(Pending::Start(state)) if catalog.state == state => {
+                            wizard::present_start_wizard(&self.window, state, &catalog, &sender);
+                        }
+                        Some(Pending::Length) => {
+                            wizard::present_length_wizard(&self.window, &catalog, &sender);
+                        }
+                        _ => {}
                     }
                 }
             },
@@ -495,7 +504,7 @@ impl SimpleComponent for App {
                 // Genres and activities differ per state, so a fresh set of
                 // choices rather than whatever was picked for another mode.
                 self.filters = Filters::default();
-                self.pending_start = Some(state);
+                self.pending = Some(Pending::Start(state));
                 self.client.send(Command::FetchCatalog(state.to_owned()));
             }
 
@@ -544,7 +553,22 @@ impl SimpleComponent for App {
                 }
             }
 
-            Msg::OpenModeDialog => present_mode_dialog(&self.window, self.mode, &sender),
+            Msg::OpenModeDialog => {
+                // Reuse the catalog when we have one; its suggested lengths
+                // are state-specific and worth keeping.
+                match self.catalog.clone() {
+                    Some(catalog) => wizard::present_length_wizard(&self.window, &catalog, &sender),
+                    None => {
+                        self.pending = Some(Pending::Length);
+                        let state = if self.state.mental_state.is_empty() {
+                            "focus".to_owned()
+                        } else {
+                            self.state.mental_state.clone()
+                        };
+                        self.client.send(Command::FetchCatalog(state));
+                    }
+                }
+            }
 
             Msg::SetMode(mode) => {
                 self.mode = mode;
@@ -678,348 +702,4 @@ fn setup_layer_shell(window: &adw::ApplicationWindow) {
     window.set_margin(Edge::Top, 12);
     window.set_margin(Edge::Right, 12);
     window.set_keyboard_mode(gtk4_layer_shell::KeyboardMode::OnDemand);
-}
-
-/// The session-length editor.
-///
-/// Built imperatively rather than in `view!` because it is transient and its
-/// rows depend on the selected mode. Reached from both the browse page and
-/// the player, so the control means the same thing wherever you are.
-fn present_mode_dialog(
-    parent: &adw::ApplicationWindow,
-    current: SessionMode,
-    sender: &ComponentSender<App>,
-) {
-    let page = adw::PreferencesPage::new();
-    let group = adw::PreferencesGroup::builder()
-        .title("Session length")
-        .description("Infinite plays until you stop it.")
-        .build();
-
-    let modes = gtk::StringList::new(&["Infinite", "Timer", "Intervals"]);
-    let mode_row = adw::ComboRow::builder()
-        .title("Mode")
-        .model(&modes)
-        .selected(match current {
-            SessionMode::Infinite => 0,
-            SessionMode::Timer { .. } => 1,
-            SessionMode::Intervals { .. } => 2,
-        })
-        .build();
-    group.add(&mode_row);
-
-    let minutes = adw::SpinRow::with_range(5.0, 600.0, 5.0);
-    minutes.set_title("Minutes");
-    minutes.set_value(match current {
-        SessionMode::Timer { minutes } => minutes as f64,
-        _ => 50.0,
-    });
-    group.add(&minutes);
-
-    let work = adw::SpinRow::with_range(1.0, 180.0, 5.0);
-    work.set_title("Work");
-    work.set_subtitle("Minutes of focus per cycle");
-    let rest = adw::SpinRow::with_range(1.0, 60.0, 1.0);
-    rest.set_title("Break");
-    rest.set_subtitle("Minutes between cycles");
-    let cycles = adw::SpinRow::with_range(1.0, 12.0, 1.0);
-    cycles.set_title("Cycles");
-    if let SessionMode::Intervals {
-        work: w,
-        rest: r,
-        cycles: c,
-    } = current
-    {
-        work.set_value(w as f64);
-        rest.set_value(r as f64);
-        cycles.set_value(c as f64);
-    } else {
-        work.set_value(25.0);
-        rest.set_value(5.0);
-        cycles.set_value(4.0);
-    }
-    for row in [&work, &rest, &cycles] {
-        group.add(row);
-    }
-    page.add(&group);
-
-    // Only the rows belonging to the chosen mode are shown; an infinite
-    // session has nothing to configure.
-    let sync = {
-        let (minutes, work, rest, cycles) =
-            (minutes.clone(), work.clone(), rest.clone(), cycles.clone());
-        move |selected: u32| {
-            minutes.set_visible(selected == 1);
-            for row in [&work, &rest, &cycles] {
-                row.set_visible(selected == 2);
-            }
-        }
-    };
-    sync(mode_row.selected());
-    mode_row.connect_selected_notify({
-        let sync = sync.clone();
-        move |row| sync(row.selected())
-    });
-
-    let read = {
-        let (mode_row, minutes, work, rest, cycles) = (
-            mode_row.clone(),
-            minutes.clone(),
-            work.clone(),
-            rest.clone(),
-            cycles.clone(),
-        );
-        move || match mode_row.selected() {
-            1 => SessionMode::Timer {
-                minutes: minutes.value() as u32,
-            },
-            2 => SessionMode::Intervals {
-                work: work.value() as u32,
-                rest: rest.value() as u32,
-                cycles: cycles.value() as u32,
-            },
-            _ => SessionMode::Infinite,
-        }
-    };
-
-    let dialog = adw::PreferencesDialog::builder()
-        .title("Session length")
-        .build();
-    dialog.add(&page);
-
-    // Applied on close: a preferences dialog with an OK button is not the
-    // GNOME idiom, and the choice is cheap to change.
-    dialog.connect_closed({
-        let sender = sender.clone();
-        move |_| sender.input(Msg::SetMode(read()))
-    });
-    dialog.present(Some(parent));
-}
-
-/// Configure and start a session for one mental state.
-///
-/// Everything here is per-state: Focus offers ten base genres, Sleep offers
-/// one, and the suggested lengths run from fifteen minutes to nine hours. A
-/// single global filter panel would be wrong for every state at once, so the
-/// editor is built from the catalog the daemon just returned.
-fn present_start_dialog(
-    parent: &adw::ApplicationWindow,
-    state: &'static str,
-    catalog: &Catalog,
-    current: &Filters,
-    mode: SessionMode,
-    sender: &ComponentSender<App>,
-) {
-    let page = adw::PreferencesPage::new();
-
-    // ---- what to play ----
-    let what = adw::PreferencesGroup::builder()
-        .title("What to play")
-        .build();
-
-    let names = catalog.activity_names();
-    let activity_row = adw::ComboRow::builder()
-        .title("Activity")
-        .model(&gtk::StringList::new(&names))
-        .selected(catalog.index_of_activity(&current.activity))
-        .build();
-    what.add(&activity_row);
-
-    let effort_row = adw::ComboRow::builder()
-        .title("Neural effect")
-        .subtitle(current.effort.description())
-        .model(&gtk::StringList::new(&Effort::ALL.map(|e| e.label())))
-        .selected(current.effort.index())
-        .build();
-    // The level names mean nothing on their own, so explain the selection.
-    effort_row.connect_selected_notify(|row| {
-        row.set_subtitle(Effort::from_index(row.selected()).description());
-    });
-    what.add(&effort_row);
-    page.add(&what);
-
-    // ---- genres ----
-    //
-    // Selecting none is not the same as selecting all: none means the
-    // service picks freely, which is usually what people want.
-    let genre_group = adw::PreferencesGroup::builder()
-        .title("Genres")
-        .description("Leave all off to let Brain.fm choose.")
-        .build();
-    let mut genre_rows = Vec::new();
-    for genre in &catalog.genres {
-        let row = adw::SwitchRow::builder()
-            .title(genre)
-            .active(current.has_genre(genre))
-            .build();
-        genre_group.add(&row);
-        genre_rows.push((genre.clone(), row));
-    }
-    if !catalog.genres.is_empty() {
-        page.add(&genre_group);
-    }
-
-    // ---- how long ----
-    let length = adw::PreferencesGroup::builder()
-        .title("Session length")
-        .build();
-
-    let mode_row = adw::ComboRow::builder()
-        .title("Mode")
-        .model(&gtk::StringList::new(&["Infinite", "Timer", "Intervals"]))
-        .selected(match mode {
-            SessionMode::Infinite => 0,
-            SessionMode::Timer { .. } => 1,
-            SessionMode::Intervals { .. } => 2,
-        })
-        .build();
-    length.add(&mode_row);
-
-    // Suggested lengths come from the service (interface version 2), with a
-    // custom escape hatch.
-    let suggested: Vec<String> = catalog
-        .lengths
-        .iter()
-        .map(|(_, label)| label.clone())
-        .chain(std::iter::once("Custom…".to_owned()))
-        .collect();
-    let suggested_refs: Vec<&str> = suggested.iter().map(String::as_str).collect();
-    let custom_index = (suggested.len() - 1) as u32;
-
-    let preset_row = adw::ComboRow::builder()
-        .title("Length")
-        .model(&gtk::StringList::new(&suggested_refs))
-        .selected(custom_index)
-        .build();
-    length.add(&preset_row);
-
-    let minutes = adw::SpinRow::with_range(5.0, 600.0, 5.0);
-    minutes.set_title("Minutes");
-    minutes.set_value(match mode {
-        SessionMode::Timer { minutes } => minutes as f64,
-        _ => 50.0,
-    });
-    length.add(&minutes);
-
-    let work = adw::SpinRow::with_range(1.0, 180.0, 5.0);
-    work.set_title("Work");
-    let rest = adw::SpinRow::with_range(1.0, 60.0, 1.0);
-    rest.set_title("Break");
-    let cycles = adw::SpinRow::with_range(1.0, 12.0, 1.0);
-    cycles.set_title("Cycles");
-    if let SessionMode::Intervals {
-        work: w,
-        rest: r,
-        cycles: c,
-    } = mode
-    {
-        work.set_value(w as f64);
-        rest.set_value(r as f64);
-        cycles.set_value(c as f64);
-    } else {
-        work.set_value(25.0);
-        rest.set_value(5.0);
-        cycles.set_value(4.0);
-    }
-    for row in [&work, &rest, &cycles] {
-        length.add(row);
-    }
-    page.add(&length);
-
-    // Show only the rows the chosen mode actually uses.
-    let sync = {
-        let (preset_row, minutes, work, rest, cycles) = (
-            preset_row.clone(),
-            minutes.clone(),
-            work.clone(),
-            rest.clone(),
-            cycles.clone(),
-        );
-        let has_presets = !catalog.lengths.is_empty();
-        move |selected: u32| {
-            let timer = selected == 1;
-            preset_row.set_visible(timer && has_presets);
-            minutes.set_visible(timer && (!has_presets || preset_row.selected() == custom_index));
-            for row in [&work, &rest, &cycles] {
-                row.set_visible(selected == 2);
-            }
-        }
-    };
-    sync(mode_row.selected());
-    mode_row.connect_selected_notify({
-        let sync = sync.clone();
-        move |row| sync(row.selected())
-    });
-    preset_row.connect_selected_notify({
-        let (sync, mode_row) = (sync.clone(), mode_row.clone());
-        move |_| sync(mode_row.selected())
-    });
-
-    // ---- assemble ----
-    let dialog = adw::Dialog::builder()
-        .title(view::title_case(state))
-        .content_width(420)
-        .content_height(640)
-        .build();
-
-    let header = adw::HeaderBar::new();
-    let start = gtk::Button::builder().label("Start").build();
-    start.add_css_class("suggested-action");
-    header.pack_end(&start);
-
-    let toolbar = adw::ToolbarView::new();
-    toolbar.add_top_bar(&header);
-    let scroller = gtk::ScrolledWindow::new();
-    scroller.set_child(Some(&page));
-    toolbar.set_content(Some(&scroller));
-    dialog.set_child(Some(&toolbar));
-
-    let lengths = catalog.lengths.clone();
-    let order = catalog.genres.clone();
-    let activities = catalog.activities.clone();
-
-    start.connect_clicked({
-        let dialog = dialog.clone();
-        let sender = sender.clone();
-        move |_| {
-            let mut filters = Filters {
-                activity: activities
-                    .get(activity_row.selected() as usize)
-                    .map(|(id, _)| id.clone())
-                    .unwrap_or_default(),
-                effort: Effort::from_index(effort_row.selected()),
-                genres: Vec::new(),
-            };
-            for (genre, row) in &genre_rows {
-                filters.toggle_genre(genre, row.is_active(), &order);
-            }
-
-            let mode = match mode_row.selected() {
-                1 => {
-                    let picked = preset_row.selected();
-                    match lengths.get(picked as usize) {
-                        Some((secs, _)) => SessionMode::Timer { minutes: secs / 60 },
-                        None => SessionMode::Timer {
-                            minutes: minutes.value() as u32,
-                        },
-                    }
-                }
-                2 => SessionMode::Intervals {
-                    work: work.value() as u32,
-                    rest: rest.value() as u32,
-                    cycles: cycles.value() as u32,
-                },
-                _ => SessionMode::Infinite,
-            };
-
-            sender.input(Msg::StartConfigured {
-                state,
-                filters: Box::new(filters),
-                mode,
-            });
-            dialog.close();
-        }
-    });
-
-    dialog.present(Some(parent));
 }

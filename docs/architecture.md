@@ -133,7 +133,7 @@ the product and the plugin surface rots.
 - **Audio on its own thread.** rodio owns the output device; the daemon talks to it over
   typed command/event channels. Confirmed against live traffic: the audio is progressive
   MP3 from `audio2.brain.fm`, not HLS, so `stream-download` → `rodio::Decoder` is
-  sufficient and we need no `mpv` subprocess and no GStreamer. See `docs/api.md`.
+  sufficient and we need no `mpv` subprocess and no GStreamer.
 - **Bounded buffering, not in-memory.** Tracks are **30 minutes** long (`1800s`
   observed), so a whole track is ~30–60 MB. Use temp-file or bounded storage rather than
   `stream-download`'s `MemoryStorageProvider`, which `brainfm-tui` uses on the assumption
@@ -199,14 +199,14 @@ the API without our daemon.
 
 The API is undocumented and can break any Tuesday, so tests must not touch the network:
 
-- **`wiremock` + recorded fixtures** for every `bfm-api` endpoint. Fixtures are the
-  executable version of `docs/api.md`.
+- **`wiremock` + recorded fixtures** for every `bfm-api` endpoint. The fixtures are the
+  only record of the shapes we depend on, in executable form.
 - **`insta`** snapshots for CLI output and any TUI rendering.
 - **D-Bus integration tests** under `dbus-run-session` against a private bus, asserting
   the published interface matches `bfm-proto`. This is the one test suite that must
   never be allowed to rot.
 - A separate, manual, never-in-CI smoke target that hits the real API, for confirming
-  `docs/api.md` is still accurate.
+  the recorded fixtures are still accurate.
 
 ## Milestones
 
@@ -234,7 +234,7 @@ Milestone 6 is the real finish line — it's the one the next project depends on
   retention beyond the in-memory playback buffer, no credential workarounds.
 - **Naming.** Avoid their trademark in the binary and crate names; `bfm` throughout.
 - **Attribution.** API knowledge came from two MIT-licensed projects. Credit both in the
-  README and `docs/api.md`; write our own implementation rather than vendoring theirs.
+  README; write our own implementation rather than vendoring theirs.
 
 
 ## The KDE front-end: what was actually wrong

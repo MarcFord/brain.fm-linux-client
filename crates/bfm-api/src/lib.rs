@@ -1,7 +1,7 @@
 //! Client for Brain.fm's **private, undocumented** web API.
 //!
-//! Unofficial and unendorsed. The surface this models is described in
-//! `docs/api.md`, captured from live traffic on 2026-11-05. It can change
+//! Unofficial and unendorsed. The surface this models was captured from live
+//! traffic and is pinned by the fixtures in `tests/fixtures/`. It can change
 //! without notice; when it does, the fix belongs in this crate and nowhere else.
 //!
 //! Two invariants hold everything together:

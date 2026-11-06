@@ -198,8 +198,8 @@ Kirigami.ApplicationWindow {
                                 Controls.ToolTip.text: "Copy track details"
                                 Controls.ToolTip.visible: hovered
                                 onClicked: {
-                                    // No per-track URL exists, so this copies
-                                    // rather than linking. See docs/api.md.
+                                    // No per-track URL exists upstream, so this
+                                    // copies details rather than linking.
                                     hiddenCopy.text = session.share_text()
                                     hiddenCopy.selectAll()
                                     hiddenCopy.copy()

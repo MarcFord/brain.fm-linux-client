@@ -31,10 +31,10 @@ breaking change means `BrainFM2`, served alongside the old one.
 
 ## When the API surprises you
 
-It will. Record what you actually observed in `docs/api.md`, and prefer
-capturing a real request over reading the web app's bundle — several
-reconstructions in this project's history were confidently wrong in ways
-the bundle did not reveal.
+It will. Prefer capturing a real request over reading the web app's bundle —
+several reconstructions in this project's history were confidently wrong in
+ways the bundle did not reveal. Put what you learn in a doc comment next to
+the code that depends on it, and in a recorded fixture.
 
 Mark anything inferred as unverified. A fixture built from an assumption
 confirms the assumption rather than catching the bug.

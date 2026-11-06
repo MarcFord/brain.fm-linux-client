@@ -1,9 +1,8 @@
 //! Integration tests for `bfm-api`, against recorded fixtures.
 //!
 //! These never touch the live API — CI enforces that. The fixtures in
-//! `tests/fixtures/` are the executable form of `docs/api.md`: if Brain.fm
-//! changes a shape, the fix is to re-capture, update the doc, and update these
-//! together.
+//! `tests/fixtures/` are the only record of the shapes we depend on: if Brain.fm
+//! changes one, the fix is to re-capture the fixture and update the test together.
 
 use bfm_api::{ApiError, AuthMethod, Client, EffectLevel, Password, SessionRequest};
 use wiremock::matchers::{body_json_string, header, method, path, query_param};

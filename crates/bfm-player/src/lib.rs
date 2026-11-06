@@ -2,7 +2,7 @@
 //!
 //! Brain.fm serves **progressive MP3** (no HLS), so a pure-Rust pipeline is
 //! sufficient: no `mpv` subprocess, no GStreamer. Tracks run ~30 minutes, so
-//! buffering is disk-backed rather than in memory — see `docs/api.md`.
+//! buffering is disk-backed rather than in memory.
 //!
 //! The crate is split so that almost all of it is testable without an audio
 //! device:

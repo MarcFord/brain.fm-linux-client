@@ -295,9 +295,6 @@ The rule holding it together: **no front-end may depend on `bfm-api` or
 being the single source of truth and every third-party client becomes a
 second-class citizen. There is a test for it.
 
-[`docs/api.md`](docs/api.md) documents the private API as actually observed,
-including the places where it surprises you.
-
 ---
 
 ## Privacy and data
@@ -334,8 +331,8 @@ verified against live traffic:
 - [`dynamotn/brainfm-tui`](https://github.com/dynamotn/brainfm-tui)
 - [`quintrino/brainfm-cli`](https://github.com/quintrino/brainfm-cli)
 
-Where [`docs/api.md`](docs/api.md) disagrees with them, it is because the
-capture showed something different.
+Both were useful starting points; where this client behaves differently, it
+is because observed behaviour differed.
 
 ## License
 

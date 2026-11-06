@@ -113,7 +113,7 @@ impl Client {
     }
 
     /// Adopt a rotated token. Called whenever a response envelope carries a
-    /// replacement; see the lazy-renewal rule in `docs/api.md`.
+    /// replacement; see the lazy-renewal rule in `docs/auth.md`.
     pub fn set_token(&mut self, token: SessionToken) {
         self.token = Some(token);
     }

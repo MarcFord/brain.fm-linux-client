@@ -1,6 +1,6 @@
 ---
 name: Brain.fm changed something
-about: An endpoint, shape or behaviour no longer matches docs/api.md
+about: Something upstream changed and the client no longer copes
 labels: upstream
 ---
 
@@ -15,4 +15,3 @@ If you captured the real request or response, include its *shape* — field
 names and types. **Never paste a token, a signed audio URL, or your user
 id.**
 
-**Which part of `docs/api.md` is now wrong**

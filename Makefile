@@ -56,7 +56,7 @@ endif
 CORE_TARGETS := bfmd bfm
 PKG_ARGS     := $(foreach t,$(CORE_TARGETS) $(GUI_TARGETS),-p $(t))
 
-.PHONY: all build detect install uninstall check test clean help
+.PHONY: all build detect install uninstall check test package clean help
 
 all: build
 
@@ -125,8 +125,39 @@ uninstall:
 	rm -f $(DESTDIR)$(APPDIR)/dev.marcford.bfm.kde.desktop
 	rm -rf $(DESTDIR)$(DOCDIR)
 
+## package: build .deb and .rpm packages (needs nfpm)
+PKGVERSION ?= $(shell sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+PKGARCH    ?= amd64
+STAGEDIR   ?= stage
+PKGOUT     ?= dist-pkg
+
+package:
+	@# Debug binaries are ~10x larger; packaging them once produced a 72MB
+	@# package for a daemon and a CLI. Refuse rather than rely on memory.
+	@test "$(PROFILE)" = "release" || { \
+	  echo "error: packaging requires PROFILE=release (got '$(PROFILE)')"; exit 1; }
+	@command -v nfpm >/dev/null || { \
+	  echo "error: nfpm not found. go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest"; exit 1; }
+	$(MAKE) build
+	rm -rf $(STAGEDIR) $(PKGOUT)
+	$(MAKE) install PREFIX=/usr DESTDIR=$(PWD)/$(STAGEDIR)
+	mkdir -p $(PKGOUT)
+	@for cfg in packaging/nfpm/*.yaml; do \
+	  name=$$(basename $$cfg .yaml); \
+	  if [ "$$name" = "bfm" ] || [ -x "$(STAGEDIR)/usr/bin/$$name" ]; then \
+	    for fmt in deb rpm; do \
+	      ARCH=$(PKGARCH) VERSION=$(PKGVERSION) nfpm package -f $$cfg -p $$fmt -t $(PKGOUT)/; \
+	    done; \
+	  else \
+	    echo "skipping $$name: not built on this machine"; \
+	  fi; \
+	done
+	@echo
+	@ls -1 $(PKGOUT)
+
 clean:
 	$(CARGO) clean
+	rm -rf $(STAGEDIR) $(PKGOUT)
 
 ## help: list targets
 help:

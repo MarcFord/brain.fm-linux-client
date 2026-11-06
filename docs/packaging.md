@@ -43,10 +43,44 @@ per branch, and a security fix has to be landed N times. Everything lives in
    app, and shipping a format that works badly is worse than not shipping
    it.
 
+## Three packages, not one
+
+`bfm` carries the daemon, the CLI and the service files. `bfm-gtk` and
+`bfm-kde` carry one binary and one desktop entry each and depend on `bfm`.
+
+The split matters: a server should be able to install the daemon without
+dragging a desktop stack onto it, and a GNOME user should not install Qt.
+Distro conventions expect it too.
+
+Note what is *not* done here: packaging the cargo artifact directly. That
+would ship `bfmd` without its D-Bus service file, and the daemon would
+never activate — the binary would be present and the app still broken.
+Packages are built from the same staged `make install` tree the Makefile
+produces, so they cannot drift from a source install.
+
 ## Verification status
 
-`make install` is verified against a `DESTDIR` for three configurations
-(both GUIs, GTK only, headless). The packaging manifests in `packaging/`
-are **not** built here: this machine has `makepkg` but no `flatpak-builder`,
-`snapcraft`, `appimagetool`, `dpkg-deb` or `rpmbuild`. They are built in CI,
-and should be treated as unproven until that pipeline has run green.
+Verified on this machine:
+
+- `make install` against a `DESTDIR`, for three configurations — both GUIs,
+  GTK only, and headless.
+- **deb and rpm built with `nfpm` and their contents inspected.** The
+  daemon package holds exactly six files, carries both service files, and
+  contains no GUI binary; `bfm-gtk` holds only its binary and its desktop
+  entry and declares `Depends: bfm (= 0.1.0)`.
+- The `PKGBUILD` parses under `makepkg` and generates a valid `.SRCINFO`.
+
+Not verified here:
+
+- The **Flatpak** manifest. This machine has no `flatpak-builder`; treat it
+  as unproven until CI builds it.
+- Installing the packages on their actual target distros. CI installs the
+  `.deb` on Ubuntu and checks the binaries land on `PATH`; the `.rpm` is
+  only inspected, not installed.
+
+### A trap worth recording
+
+The first packages built here were **72 MB** for a daemon and a CLI,
+because they were staged from a debug build. Release binaries bring the
+same package to **6.9 MB**. `make package` now refuses to run unless
+`PROFILE=release`, rather than relying on anyone remembering.

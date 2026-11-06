@@ -1,0 +1,36 @@
+# Qt6/Kirigami front-end, for Plasma.
+name: bfm-kde
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+section: sound
+priority: optional
+maintainer: Marc Ford <marc@pigeon.ly>
+description: |
+  Qt6/Kirigami desktop front-end for bfm.
+  Native on KDE Plasma, using the system Breeze style.
+vendor: Marc Ford
+homepage: https://github.com/MarcFord/brain.fm-linux-client
+license: MIT
+
+contents:
+  - src: stage/usr/bin/bfm-kde
+    dst: /usr/bin/bfm-kde
+  - src: stage/usr/share/applications/dev.marcford.bfm.kde.desktop
+    dst: /usr/share/applications/dev.marcford.bfm.kde.desktop
+
+overrides:
+  deb:
+    depends:
+      - bfm (= ${VERSION})
+      - libqt6quick6
+      - qml6-module-org-kde-kirigami
+    recommends:
+      - qt6-qtquickcontrols2-desktop-style
+  rpm:
+    depends:
+      - bfm = ${VERSION}
+      - qt6-qtdeclarative
+      - kf6-kirigami
+    recommends:
+      - qqc2-desktop-style

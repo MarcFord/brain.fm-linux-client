@@ -58,29 +58,57 @@ jobs:
           name: bfm-desktop-x86_64
           path: target/release/bfm*
 
-  deb:
+  # One tool, both formats, from the same staged `make install` tree — so a
+  # .deb and an .rpm cannot disagree about what they contain. Packaging the
+  # cargo artifact directly would ship the binary without its D-Bus service
+  # file, and the daemon would never activate.
+  packages:
     needs: core
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
-      - run: cargo install cargo-deb
-      - run: cargo deb -p bfmd --output bfm.deb
+      - uses: Swatinem/rust-cache@v2
+      - name: Build dependencies, including both desktop toolkits
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev pkg-config dbus \
+            libgtk-4-dev libadwaita-1-dev qt6-base-dev qt6-declarative-dev
+      - uses: actions/setup-go@v5
+        with: { go-version: stable }
+      - run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+      - name: Build packages
+        run: make package
+      - name: Check the packages contain what they should
+        run: |
+          set -e
+          sudo apt-get install -y rpm
+          # The daemon package must carry its service files, or D-Bus
+          # activation never happens and the GUI cannot start a backend.
+          dpkg-deb -c dist-pkg/bfm_*_amd64.deb | tee /tmp/bfm.list
+          grep -q 'usr/bin/bfmd' /tmp/bfm.list
+          grep -q 'dbus-1/services/dev.marcford.bfm.service' /tmp/bfm.list
+          grep -q 'systemd/user/bfmd.service' /tmp/bfm.list
+          # and must NOT drag a desktop stack onto a server
+          ! grep -q 'bfm-gtk' /tmp/bfm.list
+          ! grep -q 'bfm-kde' /tmp/bfm.list
+          # GUI packages carry only their own files
+          dpkg-deb -c dist-pkg/bfm-gtk_*_amd64.deb | grep -q 'usr/bin/bfm-gtk'
+          dpkg-deb -c dist-pkg/bfm-gtk_*_amd64.deb | grep -q 'applications/.*gtk.desktop'
+          # and depend on the daemon package
+          dpkg-deb -f dist-pkg/bfm-gtk_*_amd64.deb Depends | grep -q 'bfm ('
+          rpm -qlp dist-pkg/bfm-0.1.0-1.x86_64.rpm || true
+          echo "package contents verified"
+      - name: Install the deb for real and confirm it is usable
+        run: |
+          sudo apt-get install -y ./dist-pkg/bfm_*_amd64.deb
+          command -v bfmd
+          command -v bfm
+          bfm --help >/dev/null
       - uses: actions/upload-artifact@v4
-        with: { name: bfm-deb, path: bfm.deb }
-
-  rpm:
-    needs: core
-    runs-on: ubuntu-latest
-    container: fedora:latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: dnf install -y cargo rust make pkgconf alsa-lib-devel dbus-devel rpm-build
-      - run: cargo install cargo-generate-rpm
-      - run: make build GUI=none && cargo generate-rpm -p crates/bfmd
-      - uses: actions/upload-artifact@v4
-        with: { name: bfm-rpm, path: target/generate-rpm/*.rpm }
+        with:
+          name: bfm-packages
+          path: dist-pkg/*
 
   # Ships the daemon inside the sandbox; see docs/packaging.md for why.
   flatpak:

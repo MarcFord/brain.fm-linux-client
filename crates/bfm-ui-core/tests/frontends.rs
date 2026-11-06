@@ -68,3 +68,53 @@ fn both_guis_defer_to_the_shared_step_sequencing() {
         "bfm-kde should use steps::next"
     );
 }
+
+/// The icon name appears in five places: the file on disk, two desktop
+/// entries, and a constant in each front-end. They must agree.
+///
+/// This is not hypothetical — both desktop entries once referenced
+/// `dev.marcford.bfm` when no such file was installed, so every launcher
+/// showed a generic placeholder and nothing complained.
+#[test]
+fn the_icon_name_agrees_everywhere() {
+    const ICON: &str = "dev.marcford.bfm";
+
+    let gtk_desktop = include_str!("../../../dist/dev.marcford.bfm.gtk.desktop");
+    let kde_desktop = include_str!("../../../dist/dev.marcford.bfm.kde.desktop");
+    for (name, entry) in [("gtk", gtk_desktop), ("kde", kde_desktop)] {
+        let icon_line = entry
+            .lines()
+            .find(|l| l.starts_with("Icon="))
+            .unwrap_or_else(|| panic!("{name} desktop entry has no Icon="));
+        assert_eq!(
+            icon_line,
+            format!("Icon={ICON}"),
+            "{name} desktop entry points at the wrong icon"
+        );
+    }
+
+    for (name, src) in [
+        ("bfm-gtk", include_str!("../../bfm-gtk/src/main.rs")),
+        ("bfm-kde", include_str!("../../bfm-kde/src/main.rs")),
+    ] {
+        assert!(
+            src.contains(&format!(r#"ICON_NAME: &str = "{ICON}""#)),
+            "{name} should set the window icon to {ICON}"
+        );
+    }
+}
+
+/// An `Icon=` naming a file nobody installs is the failure mode above, so
+/// check the artwork is actually there and is really an SVG.
+#[test]
+fn the_icon_file_exists_and_is_svg() {
+    let svg = include_str!("../../../dist/icons/dev.marcford.bfm.svg");
+    assert!(svg.contains("<svg"), "the app icon is not an SVG");
+    assert!(
+        svg.contains("viewBox"),
+        "the icon needs a viewBox or it will not scale in a launcher"
+    );
+
+    let symbolic = include_str!("../../../dist/icons/dev.marcford.bfm-symbolic.svg");
+    assert!(symbolic.contains("<svg"), "the symbolic icon is not an SVG");
+}

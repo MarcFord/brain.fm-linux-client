@@ -15,6 +15,9 @@ mod wizard;
 
 use clap::Parser;
 
+/// Shared by both front-ends and both desktop entries.
+const ICON_NAME: &str = "dev.marcford.bfm";
+
 #[derive(Parser)]
 #[command(name = "bfm-gtk", version, about = "Brain.fm for Linux (GTK)")]
 struct Cli {
@@ -40,6 +43,11 @@ fn main() {
     let argv0 = std::env::args().next().unwrap_or_else(|| "bfm-gtk".into());
 
     let app = relm4::RelmApp::new("dev.marcford.bfm.gtk").with_args(vec![argv0]);
+
+    // The compositor finds a window's icon via app_id -> desktop file, but
+    // this covers everything that asks the toolkit directly, and the X11
+    // fallback path.
+    relm4::gtk::Window::set_default_icon_name(ICON_NAME);
     app.run::<app::App>(app::Init { layer: cli.layer });
 }
 

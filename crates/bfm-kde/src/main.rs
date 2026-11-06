@@ -15,7 +15,11 @@ fn qml_entry() -> String {
 // Implemented in src/qt_log.cpp.
 unsafe extern "C" {
     fn bfm_install_qt_message_handler();
+    fn bfm_set_window_icon(name: *const std::ffi::c_char) -> bool;
 }
+
+/// Shared by both front-ends and both desktop entries.
+const ICON_NAME: &str = "dev.marcford.bfm";
 
 fn main() {
     tracing_subscriber::fmt()
@@ -36,6 +40,16 @@ fn main() {
     // Registered after the application exists. Either order currently
     // behaves the same; this one matches Qt's own expectations.
     cxx_qt::init_qml_module!("dev.marcford.bfm");
+
+    // After the application exists, before any window is shown.
+    let icon = std::ffi::CString::new(ICON_NAME).expect("icon name");
+    if !unsafe { bfm_set_window_icon(icon.as_ptr()) } {
+        tracing::warn!(
+            icon = ICON_NAME,
+            "icon not found in the theme; install the package or set \
+             XDG_DATA_DIRS so hicolor can see it"
+        );
+    }
 
     let mut engine = QQmlApplicationEngine::new();
     if let Some(engine) = engine.as_mut() {

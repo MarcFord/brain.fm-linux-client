@@ -1,0 +1,98 @@
+name: Release
+
+# Packaging artifacts are built here rather than by hand, and from one tag,
+# so a .deb and an .rpm can never disagree about what version they are.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # The daemon and CLI need no desktop toolkit, so they build anywhere.
+  # Built first: if this fails, nothing else is worth attempting.
+  core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config dbus
+      - name: Build headless
+        run: make build GUI=none
+      - name: Verify a headless install lands correctly
+        run: |
+          make install GUI=none PREFIX=/usr DESTDIR="$PWD/stage"
+          test -x stage/usr/bin/bfmd
+          test -x stage/usr/bin/bfm
+          test -f stage/usr/share/dbus-1/services/dev.marcford.bfm.service
+          # A hard-coded prefix is the bug this guards against.
+          ! grep -q '@BINDIR@' stage/usr/share/dbus-1/services/dev.marcford.bfm.service
+          # No desktop entry may appear when no GUI was built.
+          ! test -d stage/usr/share/applications
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bfm-headless-x86_64
+          path: stage/
+
+  # Both GUIs, to prove the detection picks them up when they are present.
+  desktop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Desktop toolkits
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev pkg-config dbus \
+            libgtk-4-dev libadwaita-1-dev \
+            qt6-base-dev qt6-declarative-dev
+      - name: Report what detection found
+        run: make detect
+      - run: make build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bfm-desktop-x86_64
+          path: target/release/bfm*
+
+  deb:
+    needs: core
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+      - run: cargo install cargo-deb
+      - run: cargo deb -p bfmd --output bfm.deb
+      - uses: actions/upload-artifact@v4
+        with: { name: bfm-deb, path: bfm.deb }
+
+  rpm:
+    needs: core
+    runs-on: ubuntu-latest
+    container: fedora:latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: dnf install -y cargo rust make pkgconf alsa-lib-devel dbus-devel rpm-build
+      - run: cargo install cargo-generate-rpm
+      - run: make build GUI=none && cargo generate-rpm -p crates/bfmd
+      - uses: actions/upload-artifact@v4
+        with: { name: bfm-rpm, path: target/generate-rpm/*.rpm }
+
+  # Ships the daemon inside the sandbox; see docs/packaging.md for why.
+  flatpak:
+    needs: core
+    runs-on: ubuntu-latest
+    container:
+      image: bilelmoussaoui/flatpak-github-actions:kde-6.8
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: bfm.flatpak
+          manifest-path: packaging/flatpak/dev.marcford.bfm.yml
+          cache-key: flatpak-builder-${{ github.sha }}

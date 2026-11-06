@@ -1,0 +1,45 @@
+# Flatpak manifest.
+#
+# The daemon ships *inside* the sandbox rather than talking to one on the
+# host: a confined GUI reaching a host D-Bus service is fragile, and
+# bundling keeps the app self-contained. The trade-off is that `bfm` is not
+# on the host PATH — use `flatpak run --command=bfm dev.marcford.bfm`.
+#
+# NOT BUILT OR VERIFIED HERE: this machine has no flatpak-builder. Treat as
+# unproven until CI has built it.
+app-id: dev.marcford.bfm
+runtime: org.kde.Platform
+runtime-version: '6.8'
+sdk: org.kde.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: bfm-kde
+
+finish-args:
+  # Brain.fm's API and audio CDN.
+  - --share=network
+  # Audio out.
+  - --socket=pulseaudio
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  # The session token lives in the keyring.
+  - --talk-name=org.freedesktop.secrets
+  # The app owns its own names: the daemon runs inside the sandbox.
+  - --own-name=dev.marcford.bfm
+  - --own-name=org.mpris.MediaPlayer2.bfm
+
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  env:
+    CARGO_HOME: /run/build/bfm/cargo
+
+modules:
+  - name: bfm
+    buildsystem: simple
+    build-commands:
+      - make build PREFIX=/app GUI=kde
+      - make install PREFIX=/app GUI=kde DESTDIR=/
+    sources:
+      - type: dir
+        path: ../..

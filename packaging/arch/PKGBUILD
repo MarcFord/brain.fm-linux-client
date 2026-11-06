@@ -1,0 +1,49 @@
+# Maintainer: Marc Ford <marc@pigeon.ly>
+pkgname=bfm
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Unofficial Brain.fm client for Linux: daemon, CLI and native desktop apps"
+arch=('x86_64' 'aarch64')
+url="https://github.com/MarcFord/brain.fm-linux-client"
+license=('MIT')
+depends=('dbus' 'alsa-lib')
+makedepends=('cargo' 'pkgconf' 'make')
+# Both GUIs are optional: the build detects what is present, so a headless
+# install simply gets the daemon and CLI.
+optdepends=(
+  'gtk4: GTK front-end'
+  'libadwaita: GTK front-end'
+  'qt6-declarative: KDE front-end'
+  'kirigami: KDE front-end'
+  'qqc2-desktop-style: native look for the KDE front-end'
+  'playerctl: media-key control via MPRIS'
+)
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+prepare() {
+  cd "brain.fm-linux-client-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked
+}
+
+build() {
+  cd "brain.fm-linux-client-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  # GUI=auto lets the build pick up whatever optdepends happen to be
+  # installed on the build host.
+  make build PREFIX=/usr
+}
+
+check() {
+  cd "brain.fm-linux-client-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  make check
+}
+
+package() {
+  cd "brain.fm-linux-client-$pkgver"
+  make install PREFIX=/usr DESTDIR="$pkgdir"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

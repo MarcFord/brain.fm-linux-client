@@ -219,7 +219,7 @@ The API is undocumented and can break any Tuesday, so tests must not touch the n
 | 4 | ~~`bfm` CLI~~ **done** | Thin client: `login` (4 methods), `play`, `stop`, `timer`, `list`, `status --json --watch` |
 | 5 | ~~Desktop citizen~~ **mostly done** | MPRIS served, systemd unit, waybar module, D-Bus activation. Completions and man page outstanding |
 | 6 | ~~Extensibility~~ **done** | Timer state machine, hooks, published proxy. **Omarchy plugin unblocked** |
-| 7 | ~~Native GUI~~ **GTK done** | `bfm-ui-core` + `bfm-gtk` (libadwaita/relm4), layer-shell overlay for Hyprland. Kirigami/KDE outstanding |
+| 7 | ~~Native GUI~~ **GTK done; KDE broken** | `bfm-gtk` verified end to end, buttons included. `bfm-kde` compiles, runs and creates **no window** — see below |
 | 8 | `bfm-tui` | Optional frontend, as a client |
 
 Milestone 6 is the real finish line — it's the one the next project depends on.
@@ -235,3 +235,39 @@ Milestone 6 is the real finish line — it's the one the next project depends on
 - **Naming.** Avoid their trademark in the binary and crate names; `bfm` throughout.
 - **Attribution.** API knowledge came from two MIT-licensed projects. Credit both in the
   README and `docs/api.md`; write our own implementation rather than vendoring theirs.
+
+
+## Known broken: the KDE front-end does not display
+
+`bfm-kde` builds, starts, connects to Wayland and runs its event loop, but
+creates no window at all. Hyprland reports zero clients for the process.
+Qt emits nothing on stderr, so there is no error to chase yet.
+
+**It has never displayed anything.** An earlier claim that it "loaded
+cleanly" was wrong: that test ran it offscreen and concluded success
+because the process stayed alive for eight seconds. `QGuiApplication::exec`
+runs forever whether or not a window exists, so survival proved only that
+the event loop started. The check should always have been *does a window
+appear*, which is what finally exposed this.
+
+Ruled out so far:
+
+- The QML resource path. Verified by reading the UTF-16 resource names out
+  of the compiled binary rather than inferring it: it is
+  `qrc:/qt/qml/dev/marcford/bfm/qml/Main.qml`, which is what the code uses.
+  A detour "correcting" this to a path without the `qml/` segment was a
+  misreading of a qmlcachegen output filename, and made things worse.
+- A missing `visible: true`. QQC2's `ApplicationWindow` defaults to
+  invisible and Kirigami's inherits that, so this was a genuine bug and is
+  fixed — but it was not the whole story.
+
+Next things to try, roughly in order of likelihood:
+
+1. Install a Qt message handler so QML errors reach stderr at all. Zero
+   output from a failing load is itself suspicious and is blocking every
+   other diagnosis.
+2. Check whether `WizardPage` registers as a QML type. `Main.qml` references
+   it, and a failed type registration would prevent the root object from
+   instantiating.
+3. Load a trivial `Kirigami.ApplicationWindow` from the same module to tell
+   a module-registration problem apart from a problem in our own QML.

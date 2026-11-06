@@ -6,6 +6,11 @@ import dev.marcford.bfm
 
 Kirigami.ApplicationWindow {
     id: root
+    // QQC2's ApplicationWindow, which Kirigami's inherits, defaults to
+    // visible: false. Without this the process runs, the event loop spins,
+    // and no window ever appears - which from outside looks exactly like
+    // success.
+    visible: true
     title: "Brain.fm"
     width: Kirigami.Units.gridUnit * 24
     height: Kirigami.Units.gridUnit * 34

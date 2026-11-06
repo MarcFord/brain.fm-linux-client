@@ -70,6 +70,9 @@ busctl --user call dev.marcford.bfm /dev/marcford/bfm \
 - **MPRIS** — media keys, `playerctl -p bfm`, lock-screen widgets
 - **systemd** — `dist/bfmd.service`, D-Bus activated, hardened
 - **waybar** — `dist/waybar.jsonc`; `bfm status --watch --json` streams state
+- **Hyprland overlay** — `bfm-gtk --layer` renders as a layer-shell HUD
+  anchored top-right instead of a window; bind it to a key. Verify with
+  `make smoke-layer`
 - **Hooks** — run a command on session start/end, track start, and timer
   phase changes; event data arrives in the environment. See
   [`dist/config.example.toml`](dist/config.example.toml)

@@ -277,3 +277,25 @@ able to speak, not to generate hypotheses.
 `QGuiApplication::setDesktopFileName` now sets the `app_id` to
 `dev.marcford.bfm.kde`, matching the installed desktop entry, so the window
 picks up its icon and any compositor rules.
+
+## Verifying the Hyprland overlay
+
+`make smoke-layer` launches `bfm-gtk --layer` and asserts two things against
+the live compositor. It exits 77 (skip) off a wlroots session, so it is safe
+to run anywhere.
+
+* **A layer surface exists in the `bfm` namespace at level 3 (overlay).**
+  Checking `hyprctl clients` would find nothing even when this works —
+  layer surfaces are not in the client list. Looking in the wrong place is
+  how the KDE window was mistaken for broken for an afternoon.
+* **No ordinary window appears.** If layer-shell silently fell back, the app
+  would still look like it worked while being the wrong kind of surface.
+
+The check is known to fail when it should: reverting the `with_args` fix
+makes it report `Unknown option --layer` and exit 1. A smoke test that has
+never been seen to fail is not evidence of anything.
+
+Measured on DP-2: the surface lands at 420x560, `x=6200 y=42` — the
+monitor's right edge is 6632, so `6200 + 420` is exactly the configured
+12px margin, and it keeps its requested size rather than being tiled the
+way the ordinary window is.

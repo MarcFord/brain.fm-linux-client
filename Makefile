@@ -58,7 +58,7 @@ endif
 CORE_TARGETS := bfmd bfm
 PKG_ARGS     := $(foreach t,$(CORE_TARGETS) $(GUI_TARGETS),-p $(t))
 
-.PHONY: all build detect install uninstall check test package clean help
+.PHONY: all build detect install uninstall check test smoke-layer package clean help
 
 all: build
 
@@ -134,6 +134,11 @@ uninstall:
 	rm -f $(DESTDIR)$(ICONDIR)/dev.marcford.bfm.svg
 	rm -f $(DESTDIR)$(SYMICONDIR)/dev.marcford.bfm-symbolic.svg
 	rm -rf $(DESTDIR)$(DOCDIR)
+
+## smoke-layer: verify --layer really becomes a Hyprland overlay (skips elsewhere)
+smoke-layer:
+	@BFM_GTK_BIN=$(TARGETDIR)/bfm-gtk ./dist/smoke-layer.sh; \
+	  rc=$$?; [ $$rc -eq 77 ] && echo "(skipped)" && exit 0; exit $$rc
 
 ## package: build .deb and .rpm packages (needs nfpm)
 PKGVERSION ?= $(shell sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)

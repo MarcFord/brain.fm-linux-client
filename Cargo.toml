@@ -8,6 +8,7 @@ members = [
     "crates/bfm",
     "crates/bfm-ui-core",
     "crates/bfm-gtk",
+    "crates/bfm-kde",
 ]
 
 [workspace.package]

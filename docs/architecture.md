@@ -240,34 +240,47 @@ Milestone 6 is the real finish line — it's the one the next project depends on
 ## Known broken: the KDE front-end does not display
 
 `bfm-kde` builds, starts, connects to Wayland and runs its event loop, but
-creates no window at all. Hyprland reports zero clients for the process.
-Qt emits nothing on stderr, so there is no error to chase yet.
+creates no window. **It has never displayed anything.**
 
-**It has never displayed anything.** An earlier claim that it "loaded
-cleanly" was wrong: that test ran it offscreen and concluded success
-because the process stayed alive for eight seconds. `QGuiApplication::exec`
-runs forever whether or not a window exists, so survival proved only that
-the event loop started. The check should always have been *does a window
-appear*, which is what finally exposed this.
+### The standout clue
 
-Ruled out so far:
+`engine.load()` on a **deliberately nonexistent URL** also produces no
+warning. A working `QQmlApplicationEngine` always complains about a missing
+component. Zero diagnostics for a guaranteed-bad load says the problem is
+upstream of our QML, and it is what blocks every other line of enquiry.
 
-- The QML resource path. Verified by reading the UTF-16 resource names out
-  of the compiled binary rather than inferring it: it is
-  `qrc:/qt/qml/dev/marcford/bfm/qml/Main.qml`, which is what the code uses.
-  A detour "correcting" this to a path without the `qml/` segment was a
-  misreading of a qmlcachegen output filename, and made things worse.
-- A missing `visible: true`. QQC2's `ApplicationWindow` defaults to
-  invisible and Kirigami's inherits that, so this was a genuine bug and is
-  fixed — but it was not the whole story.
+### Ruled out, each by test rather than by reasoning
 
-Next things to try, roughly in order of likelihood:
+| Suspect | How it was eliminated |
+|---|---|
+| Our QML | `qml6` renders the exact same `Probe.qml` and shows a window |
+| Kirigami, Qt, Wayland | Same — all work outside our binary |
+| The qrc path | Read the UTF-16 resource names out of the compiled binary: it is `qrc:/qt/qml/dev/marcford/bfm/qml/Main.qml`, which is what the code uses |
+| `visible: false` | QQC2's `ApplicationWindow` does default to invisible and Kirigami inherits it — a real bug, now fixed, but not the cause |
+| Release-mode log suppression | The debug build behaves identically |
+| Platform plugin | `wayland` and `xcb` forced individually; both plugins present; no window either way |
+| A null app or engine | Both non-null; `application_name()` returns `"bfm-kde"`, so the singleton is live |
+| qrc vs filesystem | A `file://` URL to a real, known-good file behaves the same |
+| Registration order | Calling `init_qml_module!` after `QGuiApplication` changes nothing |
+| Our own `Main.qml` complexity | A five-line Kirigami window from the same module also shows nothing |
 
-1. Install a Qt message handler so QML errors reach stderr at all. Zero
-   output from a failing load is itself suspicious and is blocking every
-   other diagnosis.
-2. Check whether `WizardPage` registers as a QML type. `Main.qml` references
-   it, and a failed type registration would prevent the root object from
-   instantiating.
-3. Load a trivial `Kirigami.ApplicationWindow` from the same module to tell
-   a module-registration problem apart from a problem in our own QML.
+### Where to pick it up
+
+1. **Install a Qt message handler** (`qInstallMessageHandler`) through a
+   small C++ shim. Until Qt can report, everything else is guesswork — and
+   the silence on a bogus URL suggests its output never reaches stderr in
+   this binary.
+2. Connect `objectCreationFailed` / `objectCreated`. cxx-qt generates
+   connect helpers for `#[qsignal]`s, but `on_object_created` did not
+   resolve on `Pin<&mut QQmlApplicationEngine>` — worth finding the correct
+   form, since it answers directly whether the component instantiates.
+3. Build the upstream `qml_minimal` example against this exact Qt and
+   cxx-qt. If it also shows nothing, the fault is environmental rather than
+   ours, which would redirect the whole search.
+
+### A verification lesson worth keeping
+
+This was originally reported as working. The test ran it offscreen and
+concluded success because the process survived eight seconds —
+`QGuiApplication::exec` runs forever whether or not a window exists. For a
+GUI, the only smoke test that means anything is *did a window appear*.

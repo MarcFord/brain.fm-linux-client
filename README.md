@@ -68,6 +68,46 @@ busctl --user call dev.marcford.bfm /dev/marcford/bfm \
 
 ## Install
 
+### The short way
+
+```sh
+git clone https://github.com/MarcFord/brain.fm-linux-client
+cd brain.fm-linux-client
+./install.sh
+```
+
+One script for any distro. It works out what your system is, installs the
+build dependencies with your own package manager, picks the front-end that
+belongs on your desktop, builds, installs to `~/.local`, and wires the
+result into the running session.
+
+That last part matters more than it sounds: D-Bus reads service files when
+the bus starts, so a freshly installed daemon is invisible until the bus
+re-reads them. Without that step your first command fails with *"not
+activatable"* on an installation that is otherwise perfect.
+
+```sh
+./install.sh --dry-run          # print the plan, change nothing
+./install.sh --system           # /usr/local for all users (uses sudo)
+./install.sh --gui both         # both front-ends regardless of desktop
+./install.sh --gui none         # headless: daemon and CLI only
+./install.sh --skip-deps        # don't touch the package manager
+./install.sh --uninstall        # remove it again
+```
+
+Distro families it knows how to install dependencies for: Arch, Debian,
+Fedora, openSUSE, Alpine and Void, including derivatives — it reads both `ID`
+and `ID_LIKE` from `/etc/os-release`, because derivatives report their own
+`ID` and matching on that alone fails on exactly the systems most likely to
+run this. Anywhere else it tells you what to install and carries on with
+`--skip-deps`. Package names are the least portable thing in the script, so a
+failed dependency install is never fatal: the `pkg-config` check afterwards is
+what decides, not the package manager's exit code.
+
+Nothing here needs root unless you ask for `--system`. `bfmd` is a
+session-bus daemon with a systemd *user* unit, so `~/.local` is where it
+belongs.
+
 ### From packages
 
 ```sh
@@ -107,6 +147,19 @@ make GUI=gtk    # or: kde, both, none
 `make install` honours `PREFIX` and `DESTDIR`, so distro packaging can call
 it directly. It installs a desktop entry only for a GUI that was actually
 built — otherwise your application menu gains an entry that cannot launch.
+
+Calling `make install` yourself leaves the session wiring to you, which
+`./install.sh` would have done:
+
+```sh
+systemctl --user daemon-reload
+busctl --user call org.freedesktop.DBus /org/freedesktop/DBus \
+    org.freedesktop.DBus ReloadConfig       # or just log out and back in
+```
+
+Without the second command the service file you just installed is not yet
+visible to the running bus, and the first `bfm` call fails with *"not
+activatable"*.
 
 ### Dependencies
 
@@ -196,6 +249,13 @@ Verify it with `make smoke-layer`.
 
 `dist/waybar.jsonc` is a ready module. `bfm status --watch --json` emits
 waybar's native shape, one line per change, with no polling.
+
+`--json` never fails, because a status bar renders nothing at all if the
+process exits: an absent daemon arrives in-band as `class: "unavailable"`,
+so the bar can show the outage rather than claim `idle`. Plain `bfm status`
+does the opposite and exits non-zero with something you can act on — it is
+the command you run to find out whether this works, so it must not report a
+dead daemon as a healthy idle one.
 
 ### Media keys
 

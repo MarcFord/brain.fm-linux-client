@@ -56,6 +56,18 @@ modules:
       # ordinary install, so the manifest places it rather than the Makefile.
       - install -Dm644 packaging/flatpak/dev.marcford.bfm.metainfo.xml
         /app/share/metainfo/dev.marcford.bfm.metainfo.xml
+      # Raster icons, for appstreamcli compose only. `make install` ships the
+      # SVG, which every desktop handles, but the compose step in this SDK
+      # cannot read it and fails the build with `icon-file-read-error`. These
+      # are pre-rendered from the same SVG rather than rasterised here,
+      # because the SDK has no reliable SVG rasteriser either. AppStream wants
+      # 64x64 at minimum; 128 and 256 are what software centres actually show.
+      - install -Dm644 dist/icons/dev.marcford.bfm-64.png
+        /app/share/icons/hicolor/64x64/apps/dev.marcford.bfm.png
+      - install -Dm644 dist/icons/dev.marcford.bfm-128.png
+        /app/share/icons/hicolor/128x128/apps/dev.marcford.bfm.png
+      - install -Dm644 dist/icons/dev.marcford.bfm-256.png
+        /app/share/icons/hicolor/256x256/apps/dev.marcford.bfm.png
     sources:
       - type: dir
         path: ../..

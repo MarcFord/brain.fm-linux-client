@@ -36,6 +36,10 @@ entry here.
 - The Flatpak targeted the KDE 6.8 runtime while the Qt front-end was written
   against 6.11, so the QML could have been asked to run on an older Kirigami
   than it expects. Now tracks 6.11.
+- The Flatpak build failed at AppStream compose with `icon-file-read-error`:
+  the KDE SDK cannot read the SVG icon that `make install` ships. Raster icons
+  pre-rendered from the same SVG are now installed in the Flatpak build only,
+  so distro package contents are unchanged.
 
 ### Added
 

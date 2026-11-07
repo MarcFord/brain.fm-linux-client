@@ -71,6 +71,15 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "ok: $tag is consistent (prerelease=$pre)"
 
+      # Checked here, in the cheap job, so a forgotten changelog entry costs
+      # seconds rather than a full build. This is what keeps the file current:
+      # a release simply cannot be cut without one.
+      - name: CHANGELOG must have an entry for this version
+        run: |
+          ./dist/changelog-section.sh "${{ steps.v.outputs.version }}" > /tmp/section.md
+          echo "--- notes for ${{ steps.v.outputs.version }} ---"
+          head -20 /tmp/section.md
+
   # The same gate a push to main gets. Publishing something that has not
   # passed it would make the gate decorative.
   tests:
@@ -204,7 +213,11 @@ jobs:
           V: ${{ needs.verify.outputs.version }}
           TAG: ${{ needs.verify.outputs.tag }}
         run: |
+          set -e
           prev=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)
+          # The changelog is the source of truth for what changed. A generated
+          # commit list would duplicate it badly and read worse.
+          ./dist/changelog-section.sh "$V" > /tmp/section.md
           {
             echo "Unofficial Brain.fm client for Linux: a daemon, a CLI, MPRIS, and"
             echo "native GTK4 and Qt6/Kirigami front-ends."
@@ -239,15 +252,12 @@ jobs:
             echo
             echo "\`SHA256SUMS\` covers every asset here."
             echo
-            echo "## Changes"
+            echo "## What's in it"
+            echo
+            cat /tmp/section.md
             echo
             if [ -n "$prev" ]; then
-              git log --no-merges --pretty='- %s' "${prev}..${TAG}"
-              echo
               echo "**Full diff**: https://github.com/${GITHUB_REPOSITORY}/compare/${prev}...${TAG}"
-            else
-              echo "First release."
-              git log --no-merges --pretty='- %s' "${TAG}" | head -40
             fi
           } > notes.md
           cat notes.md

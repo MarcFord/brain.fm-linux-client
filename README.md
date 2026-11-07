@@ -363,7 +363,9 @@ broken.
 
 Tagging `vX.Y.Z` publishes a release with `.deb` and `.rpm` packages for the
 daemon and CLI, a portable headless tarball, and `SHA256SUMS`. The tag has to
-match the version in `Cargo.toml` or the release refuses to build. See
+match the version in `Cargo.toml`, and `CHANGELOG.md` must have a section for
+it, or the release refuses to build. See
+[`CHANGELOG.md`](CHANGELOG.md) for what has shipped and
 [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full picture.
 
 The front-end jobs run in an Arch container rather than on the GitHub runner,

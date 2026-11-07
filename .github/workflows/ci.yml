@@ -82,7 +82,7 @@ jobs:
           # not, so a clean local run is not proof of a clean CI run.
           shellcheck --version
           shellcheck -s sh install.sh dist/smoke-install.sh dist/smoke-layer.sh \
-            dist/ci-assert-test.sh
+            dist/ci-assert-test.sh dist/changelog-section.sh
           # Sourced, so it carries its own `shellcheck shell=sh` directive.
           shellcheck dist/ci-assert.sh
       - name: POSIX sh parse
@@ -114,6 +114,33 @@ jobs:
             echo "::error::install.sh accepted an invalid --gui"; exit 1
           fi
           echo "ok: invalid --gui rejected"
+
+  # The changelog gates releases, so its structure is checked on every
+  # branch rather than discovered at tag time.
+  changelog:
+    name: changelog
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Structure holds and the current version has an entry
+        run: |
+          . dist/ci-assert.sh
+          assert_present CHANGELOG.md
+          assert_contains '^## \[Unreleased\]' CHANGELOG.md \
+            "an Unreleased section is where in-flight work goes"
+          v=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          echo "workspace version: $v"
+          # Not required to exist yet -- the version may be unreleased -- but
+          # if a section is present it has to be extractable, since the
+          # release reads it verbatim for its notes.
+          if grep -q "^## \[$v\]" CHANGELOG.md; then
+            ./dist/changelog-section.sh "$v" > /dev/null
+            echo "ok: entry for $v is present and extractable"
+          else
+            echo "note: no entry for $v yet; required before tagging v$v"
+          fi
+          ./dist/changelog-section.sh Unreleased > /dev/null
+          echo "ok: changelog structure is intact"
 
   # Nothing in CI may touch the real Brain.fm API. Fixtures only.
   no-live-api:

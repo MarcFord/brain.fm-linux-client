@@ -72,11 +72,29 @@ and require the **Full suite** checks.
 that failure is worth seeing on a Monday rather than inside someone's first
 install attempt.
 
+### The changelog
+
+Anything a user would notice goes in `CHANGELOG.md` under `## [Unreleased]`,
+in the same commit as the change. Not refactors or test-only work — things
+someone running this would care about: new behaviour, changed behaviour, a
+fixed bug they might have hit, a new limitation.
+
+Note the `BrainFM1` interface version when it moves. Third-party clients
+feature-detect on it, so it is as much a part of the public surface as the
+release number.
+
+It is not optional, and not on an honour system: `release.yml` reads this
+file for its release notes and **refuses a tag with no section for its
+version**, in the first and cheapest job. `dist/changelog-section.sh` is what
+extracts a section, and `make check-scripts` keeps it honest.
+
 ### Cutting a release
 
 ```sh
-# 1. bump the workspace version in Cargo.toml
-# 2. commit it, merge to main
+# 1. move the Unreleased entries under a new `## [x.y.z] - YYYY-MM-DD` heading
+#    and add the link references at the foot of the file
+# 2. bump the workspace version in Cargo.toml to match
+# 3. commit, merge to main
 git tag v0.2.0 && git push origin v0.2.0
 ```
 

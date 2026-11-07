@@ -114,7 +114,7 @@ check-scripts:
 	@# "absent" instead, so presence is tested separately from the result.
 	@if command -v shellcheck >/dev/null 2>&1; then \
 	   shellcheck -s sh install.sh dist/smoke-install.sh dist/smoke-layer.sh \
-	     dist/ci-assert-test.sh \
+	     dist/ci-assert-test.sh dist/changelog-section.sh \
 	   && shellcheck dist/ci-assert.sh \
 	   && echo "ok: shellcheck clean"; \
 	 else \

@@ -5,7 +5,7 @@ platform: linux
 version: ${VERSION}
 section: sound
 priority: optional
-maintainer: Marc Ford <marc@pigeon.ly>
+maintainer: Marc Ford <marc.ford@gmail.com>
 description: |
   Qt6/Kirigami desktop front-end for bfm.
   Native on KDE Plasma, using the system Breeze style.

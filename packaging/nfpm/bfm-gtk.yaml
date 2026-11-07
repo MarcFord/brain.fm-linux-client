@@ -6,7 +6,7 @@ platform: linux
 version: ${VERSION}
 section: sound
 priority: optional
-maintainer: Marc Ford <marc@pigeon.ly>
+maintainer: Marc Ford <marc.ford@gmail.com>
 description: |
   GTK4/libadwaita desktop front-end for bfm.
   Native on GNOME, and the right choice on wlroots compositors such as

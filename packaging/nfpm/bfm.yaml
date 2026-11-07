@@ -8,7 +8,7 @@ platform: linux
 version: ${VERSION}
 section: sound
 priority: optional
-maintainer: Marc Ford <marc@pigeon.ly>
+maintainer: Marc Ford <marc.ford@gmail.com>
 description: |
   Unofficial Brain.fm client for Linux.
   A D-Bus activated daemon plus a command-line client. Desktop front-ends

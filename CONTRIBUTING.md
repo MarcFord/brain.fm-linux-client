@@ -65,8 +65,18 @@ has to keep in step.
 
 `testing` exists to rehearse a release. It is treated identically to `main`
 on purpose: a green `testing` has to mean the same thing as a green `main`,
-or it is not a rehearsal. Protect both branches in the repository settings
-and require the **Full suite** checks.
+or it is not a rehearsal.
+
+Both branches are protected and require the **Full suite** checks, which is
+why `full.yml` also triggers on pull requests into them: a required check
+that only ran *after* a merge could never be satisfied by a PR, and nothing
+would ever merge. A PR into `main` or `testing` therefore runs the fast gate
+twice — once standalone, once nested inside the full suite — which is cheap
+with caching and keeps the two workflows independent of each other.
+
+Force pushes and branch deletion are blocked on both. Administrators are not
+included in the restrictions, so the maintainer can still push directly; flip
+`enforce_admins` if that should change.
 
 `full.yml` also runs weekly. Distro package names drift underneath us, and
 that failure is worth seeing on a Monday rather than inside someone's first

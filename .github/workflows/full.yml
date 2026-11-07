@@ -18,6 +18,12 @@ name: Full suite
 on:
   push:
     branches: [main, testing]
+  # Also on pull requests into the protected branches, so the suite can be a
+  # *required* check there. Without this it only ran after a merge, which
+  # means a required-status rule naming these jobs could never be satisfied
+  # by a PR and nothing could merge.
+  pull_request:
+    branches: [main, testing]
   workflow_dispatch:
   # Distro package names drift underneath us, so this catches breakage that
   # no commit here caused. Monday 06:00 UTC.

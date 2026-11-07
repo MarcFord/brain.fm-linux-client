@@ -321,8 +321,9 @@ Full method, property and signal listing in
 ## Building and testing
 
 ```sh
-make check          # fmt, clippy -D warnings, and the full test suite
+make check          # shell scripts, fmt, clippy -D warnings, full test suite
 make smoke          # install + Hyprland overlay checks against the real system
+make check-scripts  # shellcheck and the CI assertion helpers on their own
 ```
 
 The suite runs offline against recorded fixtures — **no test may touch the
@@ -333,6 +334,19 @@ Smoke checks exist because unit tests cannot see a compositor or a session
 bus, and several bugs here hid in exactly that gap. They exit 77 to skip
 where they cannot run, and each is known to fail when the thing it checks is
 broken.
+
+### CI
+
+| Trigger | What runs |
+|---|---|
+| any branch or PR | fmt, clippy, tests, D-Bus contract, layering, MSRV, shell scripts |
+| push to `main` or `testing` | the above, plus both front-ends, smoke checks, staged installs for every GUI selection, dependency resolution on real Debian/Ubuntu/Fedora/openSUSE/Alpine images, and a real `.deb`/`.rpm` build, install and removal |
+| tag `v*` | the gate again, then packages, checksums and a published release |
+
+Tagging `vX.Y.Z` publishes a release with `.deb` and `.rpm` packages for the
+daemon and both front-ends, a portable headless tarball, and `SHA256SUMS`.
+The tag has to match the version in `Cargo.toml` or the release refuses to
+build. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full picture.
 
 ---
 

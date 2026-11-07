@@ -93,7 +93,7 @@ build: detect
 	$(CARGO) build $(CARGOFLAGS) $(PKG_ARGS)
 
 ## check: formatting, lints and the full test suite
-check:
+check: check-scripts
 	$(CARGO) fmt --all -- --check
 	RUSTFLAGS="-D warnings" $(CARGO) clippy --workspace --all-targets
 	@command -v dbus-run-session >/dev/null \
@@ -102,6 +102,25 @@ check:
 	       $(CARGO) test --workspace; }
 
 test: check
+
+## check-scripts: shellcheck + parse the shell scripts, and test the CI asserts
+#
+# install.sh is the entry point for most users, and the CI assertion helpers
+# guard the packaging, so both are checked here and not only in CI.
+check-scripts:
+	@for f in install.sh dist/*.sh; do sh -n "$$f" || exit 1; done
+	@echo "ok: all shell scripts parse"
+	@# An `||` fallback here would swallow real shellcheck findings and print
+	@# "absent" instead, so presence is tested separately from the result.
+	@if command -v shellcheck >/dev/null 2>&1; then \
+	   shellcheck -s sh install.sh dist/smoke-install.sh dist/smoke-layer.sh \
+	     dist/ci-assert-test.sh \
+	   && shellcheck dist/ci-assert.sh \
+	   && echo "ok: shellcheck clean"; \
+	 else \
+	   echo "note: shellcheck absent; skipped"; \
+	 fi
+	@./dist/ci-assert-test.sh >/dev/null && echo "ok: CI assertion helpers fail when they should"
 
 ## install: daemon, CLI, service files, and any built GUI
 install: build

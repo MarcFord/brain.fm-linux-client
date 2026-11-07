@@ -1,9 +1,26 @@
 name: CI
 
+# The fast gate: every branch, every pull request. Anything that needs a
+# D-Bus session, a desktop toolkit, a staged install or a package lives in
+# full.yml, which runs on the protected branches. The split exists so that
+# pushing a branch gives an answer in a couple of minutes.
 on:
   push:
-    branches: [main]
+    branches-ignore: [main, testing]
+    tags-ignore: ['**']
   pull_request:
+  workflow_dispatch:
+  # full.yml calls this, so the protected-branch suite is a superset of the
+  # branch suite by construction rather than by two lists kept in step.
+  workflow_call:
+
+# A new push to the same branch makes the previous run pointless.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -11,6 +28,7 @@ env:
 
 jobs:
   check:
+    name: fmt, clippy, tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,7 +37,8 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
 
-      - name: Audio and D-Bus build dependencies
+      # alsa is not optional: rodio -> cpal -> alsa-sys links against it.
+      - name: Build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y libasound2-dev pkg-config dbus
@@ -33,14 +52,60 @@ jobs:
       - name: Test
         run: cargo test --workspace --all-features
 
-      # The D-Bus surface is the product's public API, so it is tested like
-      # one - against a private bus, never the developer's session bus.
-      # Without a bus these tests skip, so they must run here to mean anything.
+      # The D-Bus surface is this project's public API, so it is tested like
+      # one: against a private bus, never a developer's session bus. These
+      # tests skip when no bus is present, so they have to run under
+      # dbus-run-session here or they assert nothing at all.
       - name: D-Bus contract tests
         run: dbus-run-session -- cargo test -p bfmd --test dbus -- --nocapture
 
+  shell:
+    name: shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # install.sh is the entry point for most users, and a syntax error in
+      # it is a worse first impression than any failing test.
+      - name: shellcheck
+        run: |
+          sudo apt-get update && sudo apt-get install -y shellcheck
+          shellcheck -s sh install.sh dist/smoke-install.sh dist/smoke-layer.sh \
+            dist/ci-assert-test.sh
+          # Sourced, so it carries its own `shellcheck shell=sh` directive.
+          shellcheck dist/ci-assert.sh
+      - name: POSIX sh parse
+        run: |
+          for f in install.sh dist/*.sh; do sh -n "$f" && echo "ok: $f"; done
+      - name: install.sh --help and --dry-run do not touch the system
+        run: |
+          ./install.sh --help >/dev/null
+          . dist/ci-assert.sh
+          ./install.sh --dry-run --yes --gui none | tee /tmp/plan.txt
+          # A dry run that installs something is the one bug this cannot have.
+          assert_absent "$HOME/.local/bin/bfm" "--dry-run installed a binary"
+          assert_contains 'would run' /tmp/plan.txt "dry run printed no plan"
+      # The packaging assertions are only worth having if they can fail, and
+      # the idiom they replaced could not. This proves each one fails.
+      - name: The CI assertion helpers fail when they should
+        run: ./dist/ci-assert-test.sh
+
+      - name: install.sh --print-deps names a known family
+        run: |
+          . dist/ci-assert.sh
+          ./install.sh --print-deps | tee /tmp/deps.txt
+          assert_contains '^family: debian' /tmp/deps.txt "runner should classify as debian"
+          assert_contains 'libasound2-dev' /tmp/deps.txt "alsa headers must be in core deps"
+
+      - name: install.sh rejects a bad --gui
+        run: |
+          if ./install.sh --gui nonsense >/dev/null 2>&1; then
+            echo "::error::install.sh accepted an invalid --gui"; exit 1
+          fi
+          echo "ok: invalid --gui rejected"
+
   # Nothing in CI may touch the real Brain.fm API. Fixtures only.
   no-live-api:
+    name: no live API calls
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,7 +119,21 @@ jobs:
           fi
           echo "ok: no live API calls in tests"
 
+  # The front-ends must not be able to reach the API or the audio engine.
+  # That rule is what keeps third-party clients first-class, and it is only
+  # worth having if it is enforced.
+  layering:
+    name: front-end layering
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+      - run: cargo test -p bfm --test layering
+
   msrv:
+    name: MSRV 1.98.1
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

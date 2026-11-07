@@ -1,0 +1,339 @@
+name: Full suite
+
+# Runs on the protected branches, where a slow and thorough answer is the
+# right trade. Everything the fast branch gate does, plus the things that
+# need a session bus, a desktop toolkit, a staged install, real packages and
+# real distro images.
+#
+# `testing` exists so that this can be exercised before main. The two are
+# treated identically on purpose: a green `testing` must mean the same thing
+# as a green `main`, or it is not a useful rehearsal.
+on:
+  push:
+    branches: [main, testing]
+  workflow_dispatch:
+  # Distro package names drift underneath us, so this catches breakage that
+  # no commit here caused. Monday 06:00 UTC.
+  schedule:
+    - cron: '0 6 * * 1'
+
+concurrency:
+  group: full-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  # The whole fast gate, unchanged, so this suite is a strict superset.
+  fast:
+    name: Fast gate
+    uses: ./.github/workflows/ci.yml
+
+  # Both front-ends, to prove pkg-config detection picks them up when the
+  # toolkits are present rather than only that it skips them when absent.
+  desktop:
+    name: Build both front-ends
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Desktop toolkits
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev pkg-config dbus \
+            libgtk-4-dev libadwaita-1-dev \
+            qt6-base-dev qt6-declarative-dev
+
+      - name: Report what detection found
+        run: make detect
+
+      # Detection claiming a toolkit it cannot build against would be worse
+      # than not detecting it, so assert what `detect` actually said.
+      - name: Detection must have found GTK
+        run: |
+          make detect | tee /tmp/detect.txt
+          grep -qE 'GTK4 \+ libadwaita *: yes' /tmp/detect.txt \
+            || { echo "::error::GTK4 installed but not detected"; exit 1; }
+
+      - name: Build everything this machine supports
+        run: make build
+
+      - name: Explicit GUI selections must all build
+        run: |
+          make build GUI=gtk
+          make build GUI=none
+          test -x target/release/bfmd
+          test -x target/release/bfm
+
+  # The smoke checks are the only tests that exercise an installed tree
+  # rather than a cargo target dir. They are also the ones that have caught
+  # the most real bugs, so they gate the protected branches.
+  smoke:
+    name: Smoke checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev pkg-config dbus \
+            libgtk-4-dev libadwaita-1-dev
+
+      # smoke-layer needs a live Hyprland and exits 77 (skip) without one, so
+      # it reports "skipped" here rather than failing. smoke-install is the
+      # one that must actually run.
+      - name: make smoke
+        run: make smoke | tee /tmp/smoke.txt
+
+      - name: The install smoke check must have really run, not skipped
+        run: |
+          grep -q 'ok: installed tree activates on demand' /tmp/smoke.txt \
+            || { echo "::error::smoke-install did not run; a skip is not a pass"; exit 1; }
+          echo "ok: activation was genuinely verified"
+
+  # `make install` is what distro packaging and install.sh both call, so each
+  # GUI selection gets a staged install and its layout asserted.
+  install-layouts:
+    name: Staged install (${{ matrix.gui }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        gui: [none, gtk, both]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev pkg-config dbus \
+            libgtk-4-dev libadwaita-1-dev qt6-base-dev qt6-declarative-dev
+
+      - name: Stage an install to a system prefix
+        run: |
+          make install GUI=${{ matrix.gui }} PREFIX=/usr DESTDIR="$PWD/stage"
+          find stage -type f | sort
+
+      - name: Always present, whatever the GUI
+        run: |
+          . dist/ci-assert.sh
+          assert_executable stage/usr/bin/bfmd
+          assert_executable stage/usr/bin/bfm
+          assert_present stage/usr/share/dbus-1/services/dev.marcford.bfm.service
+          assert_present stage/usr/lib/systemd/user/bfmd.service
+          assert_present stage/usr/share/icons/hicolor/scalable/apps/dev.marcford.bfm.svg
+          # The templates exist precisely to stop a hard-coded prefix.
+          assert_lacks '@BINDIR@' stage/usr/share/dbus-1/services/dev.marcford.bfm.service \
+            "prefix was not substituted"
+          assert_lacks '@BINDIR@' stage/usr/lib/systemd/user/bfmd.service \
+            "prefix was not substituted"
+          assert_contains '^Exec=/usr/bin/bfmd' stage/usr/share/dbus-1/services/dev.marcford.bfm.service
+
+      - name: A desktop entry only for a GUI that was built
+        run: |
+          . dist/ci-assert.sh
+          case "${{ matrix.gui }}" in
+            none)
+              # An entry here would put a launcher in the menu that cannot start.
+              assert_absent stage/usr/share/applications "headless install made a menu entry"
+              assert_absent stage/usr/bin/bfm-gtk
+              assert_absent stage/usr/bin/bfm-kde ;;
+            gtk)
+              assert_executable stage/usr/bin/bfm-gtk
+              assert_present stage/usr/share/applications/dev.marcford.bfm.gtk.desktop
+              assert_absent stage/usr/bin/bfm-kde
+              assert_absent stage/usr/share/applications/dev.marcford.bfm.kde.desktop ;;
+            both)
+              assert_executable stage/usr/bin/bfm-gtk
+              assert_executable stage/usr/bin/bfm-kde
+              assert_present stage/usr/share/applications/dev.marcford.bfm.gtk.desktop
+              assert_present stage/usr/share/applications/dev.marcford.bfm.kde.desktop ;;
+          esac
+
+      # A home prefix must put the user unit where systemd actually searches.
+      # $PREFIX/lib/systemd/user is not on the user unit path under $HOME, and
+      # installing there fails silently.
+      - name: A per-user prefix puts the unit on the user unit path
+        if: matrix.gui == 'none'
+        run: |
+          . dist/ci-assert.sh
+          make install GUI=none PREFIX="$HOME/.local"
+          assert_present "$HOME/.local/share/systemd/user/bfmd.service" \
+            "a home prefix must use the XDG data dir"
+          assert_absent "$HOME/.local/lib/systemd/user/bfmd.service" \
+            "systemd never searches here under \$HOME"
+
+      - name: Uninstall removes what it installed
+        run: |
+          . dist/ci-assert.sh
+          make uninstall PREFIX=/usr DESTDIR="$PWD/stage"
+          assert_absent stage/usr/bin/bfmd
+          assert_absent stage/usr/share/dbus-1/services/dev.marcford.bfm.service
+
+  # install.sh picks package names per distro, and those names are the least
+  # portable thing in this repo. This checks them against real distro images.
+  #
+  # The names come from `install.sh --print-deps`, so CI reads the same tables
+  # users get rather than a copy that drifts.
+  #
+  # Run via `docker run` from an Ubuntu host rather than as a job `container:`,
+  # because the Actions runner's own node cannot execute inside musl images
+  # like Alpine, which would otherwise be untestable.
+  distro-deps:
+    name: Deps resolve on ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Debian 13
+            image: debian:13
+            refresh: apt-get update
+            install: apt-get install -y --no-install-recommends
+          - name: Ubuntu 24.04
+            image: ubuntu:24.04
+            refresh: apt-get update
+            install: apt-get install -y --no-install-recommends
+          - name: Fedora
+            image: fedora:latest
+            refresh: 'true'
+            install: dnf install -y
+          - name: openSUSE Tumbleweed
+            image: opensuse/tumbleweed
+            refresh: zypper --non-interactive refresh
+            install: zypper --non-interactive install
+          - name: Alpine
+            image: alpine:latest
+            refresh: apk update
+            install: apk add
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve the core dependencies
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src -e DEBIAN_FRONTEND=noninteractive \
+            ${{ matrix.image }} sh -euc '
+              ${{ matrix.refresh }} >/dev/null 2>&1 || true
+              ./install.sh --print-deps | tee /tmp/deps.txt
+              family=$(sed -n "s/^family: //p" /tmp/deps.txt)
+              core=$(sed -n "s/^core: //p" /tmp/deps.txt)
+              [ "$family" = unknown ] && { echo "::error::distro not recognised"; exit 1; }
+              echo "--- installing core: $core"
+              ${{ matrix.install }} $core
+              # pkg-config is the real gate, not the package manager exit code.
+              command -v pkg-config >/dev/null || { echo "::error::no pkg-config after install"; exit 1; }
+              pkg-config --exists alsa || { echo "::error::alsa headers missing after installing core deps"; exit 1; }
+              echo "ok: core dependencies resolve and alsa is usable"
+            '
+
+      # KF6 and gtk4-layer-shell availability is a fact about each distro
+      # release, not a defect in this repo, so these report rather than gate.
+      # The output tells us which front-ends each distro can actually build.
+      - name: Resolve the GUI dependencies (informational)
+        continue-on-error: true
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src -e DEBIAN_FRONTEND=noninteractive \
+            ${{ matrix.image }} sh -euc '
+              ${{ matrix.refresh }} >/dev/null 2>&1 || true
+              ./install.sh --print-deps > /tmp/deps.txt
+              gtk=$(sed -n "s/^gtk: //p" /tmp/deps.txt)
+              kde=$(sed -n "s/^kde: //p" /tmp/deps.txt)
+              echo "--- gtk: $gtk"
+              ${{ matrix.install }} $gtk || echo "WARN: gtk group did not resolve"
+              echo "--- kde: $kde"
+              ${{ matrix.install }} $kde || echo "WARN: kde group did not resolve"
+              pkg-config --exists gtk4 libadwaita-1 && echo "GTK front-end: buildable" \
+                                                    || echo "GTK front-end: NOT buildable"
+              pkg-config --exists Qt6Core Qt6Quick  && echo "Qt present"  || echo "Qt absent"
+            '
+
+  # One tool, both formats, from the same staged `make install` tree, so a
+  # .deb and an .rpm cannot disagree about what they contain. Packaging a
+  # cargo artifact directly would ship the binary without its D-Bus service
+  # file and the daemon would never activate.
+  packages:
+    name: Build and verify packages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev pkg-config dbus rpm \
+            libgtk-4-dev libadwaita-1-dev qt6-base-dev qt6-declarative-dev
+      - uses: actions/setup-go@v5
+        with: { go-version: stable }
+      - run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+
+      - name: Build packages
+        run: make package
+
+      - name: The daemon package must be self-sufficient and desktop-free
+        run: |
+          . dist/ci-assert.sh
+          dpkg-deb -c dist-pkg/bfm_*_amd64.deb | tee /tmp/bfm.list
+          assert_contains 'usr/bin/bfmd' /tmp/bfm.list
+          assert_contains 'usr/bin/bfm' /tmp/bfm.list
+          assert_contains 'dbus-1/services/dev.marcford.bfm.service' /tmp/bfm.list \
+            "without this the daemon never activates"
+          assert_contains 'systemd/user/bfmd.service' /tmp/bfm.list
+          # A server must not be made to pull in a desktop stack.
+          assert_lacks 'bfm-gtk' /tmp/bfm.list "the daemon package must stay desktop-free"
+          assert_lacks 'bfm-kde' /tmp/bfm.list "the daemon package must stay desktop-free"
+
+      - name: GUI packages carry only their own files and depend on the daemon
+        run: |
+          set -e
+          dpkg-deb -c dist-pkg/bfm-gtk_*_amd64.deb | grep -q 'usr/bin/bfm-gtk'
+          dpkg-deb -c dist-pkg/bfm-gtk_*_amd64.deb | grep -q 'applications/.*gtk.desktop'
+          dpkg-deb -f dist-pkg/bfm-gtk_*_amd64.deb Depends | grep -q 'bfm ('
+          echo "ok: gtk package"
+
+      - name: The rpm must contain the same things
+        run: |
+          set -e
+          rpm -qlp dist-pkg/bfm-*.x86_64.rpm | tee /tmp/bfm.rpm.list
+          grep -q '/usr/bin/bfmd' /tmp/bfm.rpm.list
+          grep -q 'dbus-1/services/dev.marcford.bfm.service' /tmp/bfm.rpm.list
+          grep -q 'systemd/user/bfmd.service' /tmp/bfm.rpm.list
+          echo "ok: rpm contents match the deb"
+
+      - name: Install the deb for real and confirm it is usable
+        run: |
+          set -e
+          sudo apt-get install -y ./dist-pkg/bfm_*_amd64.deb
+          command -v bfmd
+          command -v bfm
+          bfm --help >/dev/null
+          bfm --version
+          # Activation from a real package install, on a private bus.
+          dbus-run-session -- sh -c 'busctl --user get-property \
+            dev.marcford.bfm /dev/marcford/bfm dev.marcford.BrainFM1 \
+            InterfaceVersion > /tmp/v.txt 2>&1' || true
+          cat /tmp/v.txt
+          grep -q '^u ' /tmp/v.txt \
+            || { echo "::error::packaged daemon did not activate"; exit 1; }
+          echo "ok: the packaged daemon activates on demand"
+
+      - name: Removing the package leaves nothing behind
+        run: |
+          . dist/ci-assert.sh
+          sudo apt-get remove -y bfm
+          assert_no_command bfmd "package removal left the daemon behind"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{ github.sha }}
+          path: dist-pkg/*
+          retention-days: 14

@@ -32,6 +32,7 @@ SKIP_DEPS=0
 ASSUME_YES=0
 DRY_RUN=0
 DO_UNINSTALL=0
+PRINT_DEPS=0
 
 usage() {
     cat <<EOF
@@ -48,6 +49,8 @@ Usage: ./install.sh [options]
   --yes, -y         do not ask before installing packages
   --dry-run         print what would happen, change nothing
   --uninstall       remove a previous install from the same prefix
+  --print-deps      print the packages this distro needs, then exit
+                    (one group per line: core/gtk/kde/rust)
   --help, -h        this text
 
 Examples:
@@ -70,6 +73,7 @@ while [ $# -gt 0 ]; do
         -y|--yes)    ASSUME_YES=1 ;;
         --dry-run)   DRY_RUN=1 ;;
         --uninstall) DO_UNINSTALL=1 ;;
+        --print-deps) PRINT_DEPS=1 ;;
         -h|--help)   usage; exit 0 ;;
         *)           echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
     esac
@@ -172,32 +176,32 @@ fi
 pkgs_for() {
     group=$1
     case "$FAMILY:$group" in
-        arch:core)   echo "base-devel pkgconf dbus" ;;
+        arch:core)   echo "base-devel pkgconf dbus alsa-lib" ;;
         arch:gtk)    echo "gtk4 libadwaita gtk4-layer-shell" ;;
         arch:kde)    echo "qt6-base qt6-declarative kirigami" ;;
         arch:rust)   echo "rust" ;;
 
-        debian:core) echo "build-essential pkg-config libdbus-1-dev" ;;
+        debian:core) echo "build-essential pkg-config libdbus-1-dev libasound2-dev" ;;
         debian:gtk)  echo "libgtk-4-dev libadwaita-1-dev libgtk4-layer-shell-dev" ;;
         debian:kde)  echo "qt6-base-dev qt6-declarative-dev libkf6kirigami-dev" ;;
         debian:rust) echo "rustc cargo" ;;
 
-        fedora:core) echo "gcc gcc-c++ pkgconf-pkg-config dbus-devel" ;;
+        fedora:core) echo "gcc gcc-c++ pkgconf-pkg-config dbus-devel alsa-lib-devel" ;;
         fedora:gtk)  echo "gtk4-devel libadwaita-devel gtk4-layer-shell-devel" ;;
         fedora:kde)  echo "qt6-qtbase-devel qt6-qtdeclarative-devel kf6-kirigami-devel" ;;
         fedora:rust) echo "rust cargo" ;;
 
-        suse:core)   echo "gcc gcc-c++ pkg-config dbus-1-devel" ;;
+        suse:core)   echo "gcc gcc-c++ pkg-config dbus-1-devel alsa-devel" ;;
         suse:gtk)    echo "gtk4-devel libadwaita-devel gtk4-layer-shell-devel" ;;
         suse:kde)    echo "qt6-base-devel qt6-declarative-devel kf6-kirigami-devel" ;;
         suse:rust)   echo "rust cargo" ;;
 
-        alpine:core) echo "build-base pkgconf dbus-dev" ;;
+        alpine:core) echo "build-base pkgconf dbus-dev alsa-lib-dev" ;;
         alpine:gtk)  echo "gtk4.0-dev libadwaita-dev gtk4-layer-shell-dev" ;;
         alpine:kde)  echo "qt6-qtbase-dev qt6-qtdeclarative-dev" ;;
         alpine:rust) echo "rust cargo" ;;
 
-        void:core)   echo "base-devel pkg-config dbus-devel" ;;
+        void:core)   echo "base-devel pkg-config dbus-devel alsa-lib-devel" ;;
         void:gtk)    echo "gtk4-devel libadwaita-devel gtk4-layer-shell-devel" ;;
         void:kde)    echo "qt6-base-devel qt6-declarative-devel kirigami2-devel" ;;
         void:rust)   echo "rust cargo" ;;
@@ -248,6 +252,19 @@ desktop_choice() {
         *)              echo gtk ;;
     esac
 }
+
+# --------------------------------------------------------------- print-deps
+#
+# Exists so CI can verify these package names against real distro images
+# without keeping its own copy of the tables, which would drift.
+if [ "$PRINT_DEPS" = 1 ]; then
+    say "family: $FAMILY"
+    say "core: $(pkgs_for core)"
+    say "gtk: $(pkgs_for gtk)"
+    say "kde: $(pkgs_for kde)"
+    say "rust: $(pkgs_for rust)"
+    exit 0
+fi
 
 # ----------------------------------------------------------------- uninstall
 if [ "$DO_UNINSTALL" = 1 ]; then
@@ -341,6 +358,23 @@ if [ "$(printf '%s\n%s\n' "$MIN_RUST" "$RUSTV" | sort -V | head -1)" != "$MIN_RU
 Update with 'rustup update', or install a newer toolchain."
 fi
 say "  cargo $RUSTV at $(command -v cargo)"
+
+# ALSA is not optional: rodio -> cpal -> alsa-sys links against it, and
+# without the headers the build dies well into a long compile with an
+# alsa-sys error that says nothing about what to install.
+step "Checking audio headers"
+if pkg-config --exists alsa 2>/dev/null; then
+    say "  ALSA development headers: yes"
+else
+    die "ALSA development headers are missing, and the audio backend cannot
+build without them. Install them and re-run:
+  Arch      pacman -S alsa-lib
+  Debian    apt-get install libasound2-dev
+  Fedora    dnf install alsa-lib-devel
+  openSUSE  zypper install alsa-devel
+  Alpine    apk add alsa-lib-dev
+  Void      xbps-install alsa-lib-devel"
+fi
 
 # -------------------------------------------- confirm the GUI is buildable
 step "Checking toolkits"

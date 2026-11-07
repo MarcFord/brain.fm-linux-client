@@ -49,7 +49,68 @@ passed against a binary that did not contain the change.
 So: assert the actual outcome, and confirm your check fails when the thing
 it tests is broken. A test never seen to fail is not evidence.
 
+## Branches, CI and releases
+
+Three workflows, split by how long you are willing to wait.
+
+| Trigger | Workflow | What runs |
+|---|---|---|
+| any branch, any PR | `ci.yml` | fmt, clippy, tests, D-Bus contract, layering, MSRV, shell scripts |
+| push to `main` or `testing` | `full.yml` | all of the above **plus** both front-ends, smoke checks, staged installs for every GUI selection, distro dependency resolution, real `.deb`/`.rpm` build and install |
+| tag `v*` | `release.yml` | the gate again, then packages, checksums, and a published GitHub release |
+
+`full.yml` *calls* `ci.yml` rather than repeating it, so the protected-branch
+suite is a strict superset by construction instead of by two lists someone
+has to keep in step.
+
+`testing` exists to rehearse a release. It is treated identically to `main`
+on purpose: a green `testing` has to mean the same thing as a green `main`,
+or it is not a rehearsal. Protect both branches in the repository settings
+and require the **Full suite** checks.
+
+`full.yml` also runs weekly. Distro package names drift underneath us, and
+that failure is worth seeing on a Monday rather than inside someone's first
+install attempt.
+
+### Cutting a release
+
+```sh
+# 1. bump the workspace version in Cargo.toml
+# 2. commit it, merge to main
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+The tag is the release. `release.yml` refuses immediately if the tag and
+`Cargo.toml` disagree, because packages whose filenames contradict the
+release they hang off are worse than no release. A tag containing a hyphen
+(`v0.2.0-rc1`) publishes as a prerelease. Re-running the workflow by hand
+for an existing tag replaces its assets rather than failing.
+
+### Writing assertions in CI
+
+Use the helpers in `dist/ci-assert.sh`, not bare shell:
+
+```sh
+. dist/ci-assert.sh
+assert_lacks 'bfm-gtk' /tmp/contents.txt "the daemon package must stay desktop-free"
+```
+
+They exist because of a trap that had silently disabled several of this
+project's packaging checks. POSIX exempts a pipeline preceded by `!` from
+errexit, so this:
+
+```sh
+set -e; ! grep -q 'bfm-gtk' contents.txt
+```
+
+does **nothing** when grep finds the thing — the negation returns 1, the
+shell does not abort, and the step passes. It looks exactly like a working
+check. `dist/ci-assert-test.sh` proves each helper fails when it should, and
+`make check-scripts` runs it.
+
 ## Commits
 
 Explain *why*, and record what was ruled out — the history here is meant to
 be readable by someone debugging the same thing later.
+
+Do not add tool or AI attribution trailers.

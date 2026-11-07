@@ -1,0 +1,7 @@
+# install.sh sources /etc/os-release to read ID and ID_LIKE. That file is not
+# part of this repo, so shellcheck cannot follow it and reports SC1091 three
+# times. It is expected, not a defect.
+#
+# Kept here rather than as a command-line flag so `make check-scripts` and the
+# CI step cannot disagree about which findings matter.
+disable=SC1091

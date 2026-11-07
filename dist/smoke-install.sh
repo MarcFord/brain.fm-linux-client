@@ -53,6 +53,10 @@ done
 # the user unit path under $HOME, and installing there fails silently: the
 # file appears, `systemctl --user` never sees it. This staged under /tmp
 # before, so it never caught that.
+# ~/.cache is not guaranteed to exist -- a container running as root often
+# has no XDG dirs at all, and mktemp would fail under `set -e` before any
+# assertion ran.
+mkdir -p "$HOME/.cache"
 HOMESTAGE=$(mktemp -d "$HOME/.cache/bfm-smoke.XXXXXX")
 make install PREFIX="$HOMESTAGE" GUI=none >/dev/null
 if [ ! -e "$HOMESTAGE/share/systemd/user/bfmd.service" ]; then

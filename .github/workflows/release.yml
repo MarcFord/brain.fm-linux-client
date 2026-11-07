@@ -1,124 +1,290 @@
 name: Release
 
-# Packaging artifacts are built here rather than by hand, and from one tag,
-# so a .deb and an .rpm can never disagree about what version they are.
+# A tag is the release. Everything is built from that one tag, so a .deb and
+# an .rpm can never disagree about what version they are, and nothing is
+# published that has not passed the same gate as a push to main.
+#
+# Tag with `vX.Y.Z`. A tag containing a hyphen (v1.0.0-rc1) is published as a
+# prerelease.
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build a release from (e.g. v0.1.0)'
+        required: true
 
 permissions:
   contents: write
 
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
 jobs:
-  # The daemon and CLI need no desktop toolkit, so they build anywhere.
-  # Built first: if this fails, nothing else is worth attempting.
-  core:
+  # Cheap, and it fails the release before anything spends ten minutes
+  # building. A tag that disagrees with Cargo.toml would produce packages
+  # whose filenames and contents contradict the release they are attached to.
+  verify:
+    name: Verify the tag
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      tag: ${{ steps.v.outputs.tag }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config dbus
-      - name: Build headless
-        run: make build GUI=none
-      - name: Verify a headless install lands correctly
-        run: |
-          make install GUI=none PREFIX=/usr DESTDIR="$PWD/stage"
-          test -x stage/usr/bin/bfmd
-          test -x stage/usr/bin/bfm
-          test -f stage/usr/share/dbus-1/services/dev.marcford.bfm.service
-          # A hard-coded prefix is the bug this guards against.
-          ! grep -q '@BINDIR@' stage/usr/share/dbus-1/services/dev.marcford.bfm.service
-          # No desktop entry may appear when no GUI was built.
-          ! test -d stage/usr/share/applications
-      - uses: actions/upload-artifact@v4
         with:
-          name: bfm-headless-x86_64
-          path: stage/
+          ref: ${{ github.event.inputs.tag || github.ref }}
 
-  # Both GUIs, to prove the detection picks them up when they are present.
-  desktop:
+      - id: v
+        name: Tag must match the workspace version
+        run: |
+          set -e
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          case "$tag" in
+            v*) ;;
+            *) echo "::error::tag '$tag' must start with v"; exit 1 ;;
+          esac
+          tag_version="${tag#v}"
+          cargo_version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+
+          echo "tag:        $tag_version"
+          echo "Cargo.toml: $cargo_version"
+          if [ "$tag_version" != "$cargo_version" ]; then
+            echo "::error::tag $tag says $tag_version but Cargo.toml says $cargo_version."
+            echo "::error::Bump the workspace version and re-tag so they agree."
+            exit 1
+          fi
+
+          # A hyphen means a prerelease: v1.0.0-rc1, v1.0.0-beta.2.
+          case "$tag_version" in
+            *-*) pre=true ;;
+            *)   pre=false ;;
+          esac
+
+          {
+            echo "version=$tag_version"
+            echo "tag=$tag"
+            echo "prerelease=$pre"
+          } >> "$GITHUB_OUTPUT"
+          echo "ok: $tag is consistent (prerelease=$pre)"
+
+  # The same gate a push to main gets. Publishing something that has not
+  # passed it would make the gate decorative.
+  tests:
+    name: Test gate
+    needs: verify
+    uses: ./.github/workflows/ci.yml
+
+  smoke:
+    name: Smoke checks
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Desktop toolkits
-        run: |
+      - run: |
           sudo apt-get update
           sudo apt-get install -y libasound2-dev pkg-config dbus \
-            libgtk-4-dev libadwaita-1-dev \
-            qt6-base-dev qt6-declarative-dev
-      - name: Report what detection found
-        run: make detect
-      - run: make build
-      - uses: actions/upload-artifact@v4
-        with:
-          name: bfm-desktop-x86_64
-          path: target/release/bfm*
+            libgtk-4-dev libadwaita-1-dev
+      - run: make smoke | tee /tmp/smoke.txt
+      - name: A skip is not a pass
+        run: |
+          grep -q 'ok: installed tree activates on demand' /tmp/smoke.txt \
+            || { echo "::error::smoke-install did not run"; exit 1; }
 
-  # One tool, both formats, from the same staged `make install` tree — so a
-  # .deb and an .rpm cannot disagree about what they contain. Packaging the
-  # cargo artifact directly would ship the binary without its D-Bus service
-  # file, and the daemon would never activate.
   packages:
-    needs: core
+    name: Packages (.deb, .rpm)
+    needs: [verify, tests, smoke]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Build dependencies, including both desktop toolkits
+      - name: Build dependencies, both desktop toolkits
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev pkg-config dbus \
+          sudo apt-get install -y libasound2-dev pkg-config dbus rpm \
             libgtk-4-dev libadwaita-1-dev qt6-base-dev qt6-declarative-dev
       - uses: actions/setup-go@v5
         with: { go-version: stable }
       - run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+
       - name: Build packages
         run: make package
-      - name: Check the packages contain what they should
+
+      # Three packages, so a server never pulls in a desktop stack and a
+      # GNOME user never installs Qt.
+      - name: All three packages exist, in both formats
         run: |
           set -e
-          sudo apt-get install -y rpm
-          # The daemon package must carry its service files, or D-Bus
-          # activation never happens and the GUI cannot start a backend.
-          dpkg-deb -c dist-pkg/bfm_*_amd64.deb | tee /tmp/bfm.list
-          grep -q 'usr/bin/bfmd' /tmp/bfm.list
-          grep -q 'dbus-1/services/dev.marcford.bfm.service' /tmp/bfm.list
-          grep -q 'systemd/user/bfmd.service' /tmp/bfm.list
-          # and must NOT drag a desktop stack onto a server
-          ! grep -q 'bfm-gtk' /tmp/bfm.list
-          ! grep -q 'bfm-kde' /tmp/bfm.list
-          # GUI packages carry only their own files
-          dpkg-deb -c dist-pkg/bfm-gtk_*_amd64.deb | grep -q 'usr/bin/bfm-gtk'
-          dpkg-deb -c dist-pkg/bfm-gtk_*_amd64.deb | grep -q 'applications/.*gtk.desktop'
-          # and depend on the daemon package
-          dpkg-deb -f dist-pkg/bfm-gtk_*_amd64.deb Depends | grep -q 'bfm ('
-          rpm -qlp dist-pkg/bfm-0.1.0-1.x86_64.rpm || true
-          echo "package contents verified"
-      - name: Install the deb for real and confirm it is usable
+          ls -1 dist-pkg/
+          V='${{ needs.verify.outputs.version }}'
+          for p in bfm bfm-gtk bfm-kde; do
+            ls dist-pkg/${p}_${V}_amd64.deb >/dev/null \
+              || { echo "::error::missing deb for $p"; exit 1; }
+            ls dist-pkg/${p}-${V}-*.x86_64.rpm >/dev/null \
+              || { echo "::error::missing rpm for $p"; exit 1; }
+          done
+          echo "ok: six packages at version $V"
+
+      - name: The daemon package must be self-sufficient and desktop-free
         run: |
+          . dist/ci-assert.sh
+          dpkg-deb -c dist-pkg/bfm_*_amd64.deb | tee /tmp/bfm.list
+          assert_contains 'usr/bin/bfmd' /tmp/bfm.list
+          assert_contains 'dbus-1/services/dev.marcford.bfm.service' /tmp/bfm.list \
+            "without this the daemon never activates"
+          assert_contains 'systemd/user/bfmd.service' /tmp/bfm.list
+          assert_lacks 'bfm-gtk' /tmp/bfm.list "the daemon package must stay desktop-free"
+          assert_lacks 'bfm-kde' /tmp/bfm.list "the daemon package must stay desktop-free"
+          dpkg-deb -f dist-pkg/bfm-gtk_*_amd64.deb Depends > /tmp/gtk.dep
+          dpkg-deb -f dist-pkg/bfm-kde_*_amd64.deb Depends > /tmp/kde.dep
+          assert_contains 'bfm (' /tmp/gtk.dep "the GUI package must depend on the daemon"
+          assert_contains 'bfm (' /tmp/kde.dep "the GUI package must depend on the daemon"
+          rpm -qlp dist-pkg/bfm-${{ needs.verify.outputs.version }}-*.x86_64.rpm > /tmp/rpm.list
+          assert_contains 'dbus-1/services/dev.marcford.bfm.service' /tmp/rpm.list \
+            "the rpm must carry the same service file as the deb"
+
+      - name: Install the deb and prove the daemon activates
+        run: |
+          set -e
           sudo apt-get install -y ./dist-pkg/bfm_*_amd64.deb
-          command -v bfmd
-          command -v bfm
-          bfm --help >/dev/null
+          bfm --version
+          dbus-run-session -- sh -c 'busctl --user get-property \
+            dev.marcford.bfm /dev/marcford/bfm dev.marcford.BrainFM1 \
+            InterfaceVersion > /tmp/v.txt 2>&1' || true
+          cat /tmp/v.txt
+          grep -q '^u ' /tmp/v.txt \
+            || { echo "::error::the packaged daemon did not activate"; exit 1; }
+          sudo apt-get remove -y bfm
+
+      # For distros none of the above covers: a relocatable tree built by the
+      # same `make install` the packages use.
+      - name: Portable tarball
+        run: |
+          set -e
+          V='${{ needs.verify.outputs.version }}'
+          rm -rf tarball && make install GUI=none PREFIX=/usr DESTDIR="$PWD/tarball"
+          tar -C tarball -czf "dist-pkg/bfm-${V}-x86_64-headless.tar.gz" .
+          tar -tzf "dist-pkg/bfm-${V}-x86_64-headless.tar.gz" | head
+
+      - name: Checksums
+        run: |
+          cd dist-pkg
+          sha256sum ./* > SHA256SUMS
+          cat SHA256SUMS
+
       - uses: actions/upload-artifact@v4
         with:
-          name: bfm-packages
+          name: release-assets
           path: dist-pkg/*
+          retention-days: 7
 
-  # Ships the daemon inside the sandbox; see docs/packaging.md for why.
+  release:
+    name: Publish the release
+    needs: [verify, packages]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: dist-pkg
+
+      - name: Write the release notes
+        env:
+          V: ${{ needs.verify.outputs.version }}
+          TAG: ${{ needs.verify.outputs.tag }}
+        run: |
+          prev=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)
+          {
+            echo "Unofficial Brain.fm client for Linux: a daemon, a CLI, MPRIS, and"
+            echo "native GTK4 and Qt6/Kirigami front-ends."
+            echo
+            echo "## Install"
+            echo
+            echo '### Debian, Ubuntu'
+            echo '```sh'
+            echo "sudo apt install ./bfm_${V}_amd64.deb        # daemon + CLI"
+            echo "sudo apt install ./bfm-gtk_${V}_amd64.deb    # GNOME/Hyprland app"
+            echo "sudo apt install ./bfm-kde_${V}_amd64.deb    # Plasma app"
+            echo '```'
+            echo
+            echo '### Fedora, RHEL, openSUSE'
+            echo '```sh'
+            echo "sudo dnf install ./bfm-${V}-1.x86_64.rpm"
+            echo "sudo dnf install ./bfm-gtk-${V}-1.x86_64.rpm"
+            echo '```'
+            echo
+            echo '### Any other distro, from source'
+            echo '```sh'
+            echo "git clone --branch ${TAG} https://github.com/${GITHUB_REPOSITORY}"
+            echo "cd $(basename "${GITHUB_REPOSITORY}") && ./install.sh"
+            echo '```'
+            echo
+            echo "The GUI packages depend on \`bfm\`, so a server never pulls in a"
+            echo "desktop stack. \`SHA256SUMS\` covers every asset here."
+            echo
+            echo "## Changes"
+            echo
+            if [ -n "$prev" ]; then
+              git log --no-merges --pretty='- %s' "${prev}..${TAG}"
+              echo
+              echo "**Full diff**: https://github.com/${GITHUB_REPOSITORY}/compare/${prev}...${TAG}"
+            else
+              echo "First release."
+              git log --no-merges --pretty='- %s' "${TAG}" | head -40
+            fi
+          } > notes.md
+          cat notes.md
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.verify.outputs.tag }}
+          PRE: ${{ needs.verify.outputs.prerelease }}
+        run: |
+          set -e
+          flag=""
+          [ "$PRE" = "true" ] && flag="--prerelease"
+          # Idempotent: re-running workflow_dispatch for a tag replaces the
+          # assets rather than failing on an existing release.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release $TAG exists; updating notes and assets"
+            gh release edit "$TAG" --notes-file notes.md $flag
+            gh release upload "$TAG" dist-pkg/* --clobber
+          else
+            gh release create "$TAG" dist-pkg/* \
+              --title "bfm $TAG" --notes-file notes.md $flag
+          fi
+          gh release view "$TAG"
+
+  # The Flatpak manifest has never been built end to end, so it must not be
+  # able to fail a release. When it goes green reliably, drop the flag.
   flatpak:
-    needs: core
+    name: Flatpak bundle (not release-blocking)
+    needs: verify
+    continue-on-error: true
     runs-on: ubuntu-latest
     container:
       image: bilelmoussaoui/flatpak-github-actions:kde-6.8
       options: --privileged
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           bundle: bfm.flatpak

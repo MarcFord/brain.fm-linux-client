@@ -21,7 +21,23 @@ set -eu
 command -v dbus-run-session >/dev/null 2>&1 || { echo "skip: no dbus-run-session"; exit 77; }
 
 STAGE=$(mktemp -d)
-trap 'rm -rf "$STAGE"' EXIT
+HOMESTAGE=""
+
+# The activated daemon outlives the private bus that started it, so each run
+# used to leave a bfmd behind pointing at a staging dir that no longer exists.
+# Reap by matching the executable path against our own staging dirs; never by
+# process name alone, which would kill the user's real daemon. The empty-var
+# guard matters: an unset stage would make the pattern `/*` and match
+# everything.
+cleanup() {
+    for pid in $(pgrep -x bfmd 2>/dev/null); do
+        exe=$(readlink -f "/proc/$pid/exe" 2>/dev/null) || continue
+        [ -n "$STAGE" ] && case "$exe" in "$STAGE"/*) kill "$pid" 2>/dev/null; continue ;; esac
+        [ -n "$HOMESTAGE" ] && case "$exe" in "$HOMESTAGE"/*) kill "$pid" 2>/dev/null ;; esac
+    done
+    rm -rf "$STAGE" ${HOMESTAGE:+"$HOMESTAGE"}
+}
+trap cleanup EXIT
 
 make install PREFIX="$STAGE" GUI=none >/dev/null
 
@@ -31,6 +47,19 @@ for f in bin/bfmd bin/bfm \
          share/icons/hicolor/scalable/apps/dev.marcford.bfm.svg; do
     [ -e "$STAGE/$f" ] || { echo "FAIL: missing $f"; exit 1; }
 done
+
+# A per-user prefix must put the unit somewhere systemd actually searches.
+# $PREFIX/lib/systemd/user is correct for /usr and /usr/local but is NOT on
+# the user unit path under $HOME, and installing there fails silently: the
+# file appears, `systemctl --user` never sees it. This staged under /tmp
+# before, so it never caught that.
+HOMESTAGE=$(mktemp -d "$HOME/.cache/bfm-smoke.XXXXXX")
+make install PREFIX="$HOMESTAGE" GUI=none >/dev/null
+if [ ! -e "$HOMESTAGE/share/systemd/user/bfmd.service" ]; then
+    echo "FAIL: home-prefix install put the unit outside the user unit path"
+    find "$HOMESTAGE" -name 'bfmd.service' | sed 's/^/  found at: /'
+    exit 1
+fi
 
 # A hard-coded prefix here is the bug the templates exist to prevent.
 if grep -q '@BINDIR@' "$STAGE/share/dbus-1/services/dev.marcford.bfm.service"; then
@@ -44,8 +73,13 @@ fi
 # Capture through a file, not command substitution. The activated daemon
 # inherits the pipe and never exits by design, so `out=$(...)` waits for a
 # writer that will never close and hangs forever.
+# XDG_DATA_HOME must be redirected too, not just XDG_DATA_DIRS. D-Bus searches
+# the home data dir independently, so once bfm is actually installed to
+# ~/.local the private bus sees that service file and activates the *installed*
+# daemon instead of the staged one -- the check then passes no matter how
+# broken the staged tree is.
 RESULT="$STAGE/result.txt"
-XDG_DATA_DIRS="$STAGE/share" BFM_TOKEN_STORE=memory \
+XDG_DATA_HOME="$STAGE/share" XDG_DATA_DIRS="$STAGE/share" BFM_TOKEN_STORE=memory \
   dbus-run-session -- sh -c "busctl --user get-property \
     dev.marcford.bfm /dev/marcford/bfm dev.marcford.BrainFM1 \
     InterfaceVersion >\"$RESULT\" 2>&1" >/dev/null 2>&1 || true

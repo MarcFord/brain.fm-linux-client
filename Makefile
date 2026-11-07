@@ -14,11 +14,27 @@ BINDIR       = $(PREFIX)/bin
 DATADIR      = $(PREFIX)/share
 APPDIR       = $(DATADIR)/applications
 DBUSDIR      = $(DATADIR)/dbus-1/services
-SYSTEMDDIR   = $(PREFIX)/lib/systemd/user
 DOCDIR       = $(DATADIR)/doc/bfm
 ICONDIR      = $(DATADIR)/icons/hicolor/scalable/apps
 SYMICONDIR   = $(DATADIR)/icons/hicolor/symbolic/apps
 TARGETDIR    = target/$(PROFILE)
+
+# Where a *user* unit may live depends on the kind of prefix, and getting it
+# wrong fails silently: the unit installs, and systemd never looks there.
+# Verified against `systemctl --user show -p UnitPath`:
+#
+#   /usr/lib/systemd/user         searched    <- convention for packages
+#   /usr/local/lib/systemd/user   searched
+#   ~/.local/lib/systemd/user     NOT searched
+#   $XDG_DATA_HOME/systemd/user   searched    <- the per-user location
+#
+# So a home prefix has to use the data dir. System prefixes keep
+# $PREFIX/lib/systemd/user, which is what distro packaging expects.
+ifneq ($(filter $(HOME)/%,$(PREFIX)),)
+SYSTEMDDIR   = $(DATADIR)/systemd/user
+else
+SYSTEMDDIR   = $(PREFIX)/lib/systemd/user
+endif
 
 ifeq ($(PROFILE),release)
 CARGOFLAGS = --release

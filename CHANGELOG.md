@@ -39,7 +39,9 @@ entry here.
 - The Flatpak build failed at AppStream compose with `icon-file-read-error`:
   the KDE SDK cannot read the SVG icon that `make install` ships. Raster icons
   pre-rendered from the same SVG are now installed in the Flatpak build only,
-  so distro package contents are unchanged.
+  so distro package contents are unchanged. Adding them alongside the SVG was
+  not enough — compose *prefers* a scalable icon and fails on it — so the
+  Flatpak tree drops the SVG as well.
 
 ### Added
 

@@ -68,6 +68,14 @@ modules:
         /app/share/icons/hicolor/128x128/apps/dev.marcford.bfm.png
       - install -Dm644 dist/icons/dev.marcford.bfm-256.png
         /app/share/icons/hicolor/256x256/apps/dev.marcford.bfm.png
+      # And drop the SVG that `make install` placed. appstreamcli compose
+      # *prefers* a scalable icon when one exists and fails the whole build
+      # with `icon-file-read-error` when it cannot rasterise it, which is the
+      # case in this SDK. Adding PNGs alongside it was not enough; the SVG has
+      # to be absent. Verified locally: a PNG-only tree composes successfully
+      # and still emits the 64x64 and 128x128 cached icons a store needs.
+      # Only the Flatpak loses the SVG -- distro packages keep shipping it.
+      - rm -f /app/share/icons/hicolor/scalable/apps/dev.marcford.bfm.svg
     sources:
       - type: dir
         path: ../..

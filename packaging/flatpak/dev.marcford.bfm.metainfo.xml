@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AppStream metadata for the Flatpak build.
+
+  Required for the app to present itself properly to software centres and to
+  pass the appstream validation the Flatpak CI action runs. Kept here rather
+  than in dist/ because it describes the Flatpak bundle specifically: the
+  distro packages install a desktop entry and icon and nothing else.
+
+  Note the project is unofficial and unaffiliated. The name deliberately
+  avoids Brain.fm's trademark in the id and binary names, and the icon is an
+  original drawing rather than their mark.
+-->
+<component type="desktop-application">
+  <id>dev.marcford.bfm</id>
+
+  <name>Brain.fm for Linux</name>
+  <summary>Unofficial Brain.fm client with a daemon, CLI and MPRIS</summary>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <developer id="dev.marcford">
+    <name>Marc Ford</name>
+  </developer>
+
+  <description>
+    <p>
+      An unofficial, unaffiliated Linux client for Brain.fm. A Brain.fm
+      subscription is required; this application provides no music of its own.
+    </p>
+    <p>
+      Playback runs in a background daemon that exposes a documented D-Bus
+      interface, so the desktop app, the command line, your status bar and
+      anything you write yourself are all equal clients of the same service.
+      The daemon also serves MPRIS, so media keys, lock screens and status bar
+      modules work with no configuration.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Mental state, activity, genre and neural-effect selection</li>
+      <li>Infinite sessions, countdown timers, or repeating intervals</li>
+      <li>Favourite and dislike</li>
+      <li>MPRIS 2, with honest capabilities: Brain.fm sessions only move
+      forward and cannot seek, so those controls are not offered</li>
+      <li>Sign in with email, or with Google, Apple or Facebook through your
+      browser</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">dev.marcford.bfm.kde.desktop</launchable>
+
+  <url type="homepage">https://github.com/MarcFord/brain.fm-linux-client</url>
+  <url type="bugtracker">https://github.com/MarcFord/brain.fm-linux-client/issues</url>
+  <url type="vcs-browser">https://github.com/MarcFord/brain.fm-linux-client</url>
+
+  <provides>
+    <binary>bfm</binary>
+    <binary>bfmd</binary>
+    <binary>bfm-kde</binary>
+  </provides>
+
+  <categories>
+    <category>Audio</category>
+    <category>AudioVideo</category>
+  </categories>
+
+  <keywords>
+    <keyword>focus</keyword>
+    <keyword>music</keyword>
+    <keyword>concentration</keyword>
+  </keywords>
+
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+
+  <requires>
+    <internet>always</internet>
+  </requires>
+
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="0.1.0" date="2026-11-07">
+      <description>
+        <p>
+          First release: the daemon and its D-Bus interface, the command line
+          client, MPRIS, and native GTK4 and Qt6/Kirigami applications.
+        </p>
+      </description>
+      <url type="details">https://github.com/MarcFord/brain.fm-linux-client/releases/tag/v0.1.0</url>
+    </release>
+  </releases>
+</component>

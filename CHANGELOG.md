@@ -21,7 +21,34 @@ entry here.
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- The Flatpak build never ran. It referenced
+  `bilelmoussaoui/flatpak-github-actions:kde-6.8`, a Docker Hub tag that does
+  not exist — that repository stops at `kde-6.7` — so the job failed on the
+  image pull and the manifest itself was never exercised at all. It now uses
+  `ghcr.io/flathub-infra/flatpak-github-actions`, where the project actually
+  publishes.
+- Flatpak builds ran with no network while `cargo` needed to fetch crates,
+  which could not have worked. The manifest now asks for network during the
+  build and says plainly why that makes it unsuitable for Flathub as it
+  stands.
+- The Flatpak targeted the KDE 6.8 runtime while the Qt front-end was written
+  against 6.11, so the QML could have been asked to run on an older Kirigami
+  than it expects. Now tracks 6.11.
+
+### Added
+
+- AppStream metadata for the Flatpak
+  (`packaging/flatpak/dev.marcford.bfm.metainfo.xml`), so the app presents
+  itself properly to software centres. Validated by `appstreamcli` in CI,
+  which also checks that it carries a `<release>` for the tag being built.
+- The Flatpak bundle is now also built on pushes to the protected branches,
+  not only on tags, so the manifest can be iterated on without cutting a
+  release. It is informational in both places and gates nothing.
+- The full suite runs on pull requests into `main` and `testing`, which is
+  what lets it be a *required* check there. Both branches are now protected
+  and require all seventeen of its jobs.
 
 ## [0.1.0] — 2026-11-07
 

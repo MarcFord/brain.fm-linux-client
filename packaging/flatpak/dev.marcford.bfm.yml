@@ -5,11 +5,15 @@
 # bundling keeps the app self-contained. The trade-off is that `bfm` is not
 # on the host PATH — use `flatpak run --command=bfm dev.marcford.bfm`.
 #
-# NOT BUILT OR VERIFIED HERE: this machine has no flatpak-builder. Treat as
-# unproven until CI has built it.
+# The KDE front-end is the one that is packaged, because org.kde.Sdk already
+# carries Qt and Kirigami. A GTK flatpak would need the GNOME runtime and,
+# more awkwardly, GTK >= 4.22, which the current GNOME runtimes do not ship.
+#
+# The runtime version tracks the Qt this was developed against (6.11), so the
+# QML is not asked to run on an older Kirigami than it was written for.
 app-id: dev.marcford.bfm
 runtime: org.kde.Platform
-runtime-version: '6.8'
+runtime-version: '6.11'
 sdk: org.kde.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
@@ -33,13 +37,25 @@ build-options:
   append-path: /usr/lib/sdk/rust-stable/bin
   env:
     CARGO_HOME: /run/build/bfm/cargo
+  # cargo has to fetch crates, and flatpak-builder builds with no network by
+  # default. This is why the manifest is not Flathub-submittable as it
+  # stands: Flathub forbids network access during a build and would require
+  # the dependency tree vendored into the manifest (see
+  # flatpak-builder-tools' cargo generator). That is a larger piece of work
+  # and is deliberately not pretended at here.
+  build-args:
+    - --share=network
 
 modules:
   - name: bfm
     buildsystem: simple
     build-commands:
-      - make build PREFIX=/app GUI=kde
-      - make install PREFIX=/app GUI=kde DESTDIR=/
+      - make build PROFILE=release GUI=kde
+      - make install PREFIX=/app GUI=kde
+      # AppStream metadata is a store/desktop concern rather than part of the
+      # ordinary install, so the manifest places it rather than the Makefile.
+      - install -Dm644 packaging/flatpak/dev.marcford.bfm.metainfo.xml
+        /app/share/metainfo/dev.marcford.bfm.metainfo.xml
     sources:
       - type: dir
         path: ../..

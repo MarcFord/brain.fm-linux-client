@@ -283,20 +283,38 @@ jobs:
           fi
           gh release view "$TAG"
 
-  # The Flatpak manifest has never been built end to end, so it must not be
-  # able to fail a release. When it goes green reliably, drop the flag.
+  # Still not release-blocking: it builds now, but a Flatpak that installs and
+  # runs is a stronger claim than one that compiles, and nothing here checks
+  # the latter. Drop the flag once that is covered.
+  #
+  # The image lives on ghcr under flathub-infra. The Docker Hub repo this
+  # used to reference (bilelmoussaoui/flatpak-github-actions) stops at
+  # kde-6.7, so kde-6.8 there was "manifest unknown" and the job never
+  # reached the manifest at all.
   flatpak:
     name: Flatpak bundle (not release-blocking)
     needs: verify
     continue-on-error: true
     runs-on: ubuntu-latest
     container:
-      image: bilelmoussaoui/flatpak-github-actions:kde-6.8
+      image: ghcr.io/flathub-infra/flatpak-github-actions:kde-6.11
       options: --privileged
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
+
+      # Cheap, and a bad metainfo file fails the bundle build late and
+      # confusingly. The release version must also match the tag, or software
+      # centres advertise a version that was never published.
+      - name: Validate the AppStream metadata
+        run: |
+          appstreamcli validate --no-net \
+            packaging/flatpak/dev.marcford.bfm.metainfo.xml
+          grep -q 'version="${{ needs.verify.outputs.version }}"' \
+            packaging/flatpak/dev.marcford.bfm.metainfo.xml \
+            || { echo "::error::metainfo has no <release> for ${{ needs.verify.outputs.version }}"; exit 1; }
+
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           bundle: bfm.flatpak

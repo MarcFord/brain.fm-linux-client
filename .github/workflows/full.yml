@@ -372,3 +372,27 @@ jobs:
           name: packages-${{ github.sha }}
           path: dist-pkg/*
           retention-days: 14
+
+  # Built here as well as on a tag, because iterating on a Flatpak manifest
+  # by cutting releases is no way to live. Not gating: see release.yml for
+  # why, and it is deliberately absent from the required checks.
+  flatpak:
+    name: Flatpak bundle (informational)
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:kde-6.11
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate the AppStream metadata
+        run: |
+          appstreamcli validate --no-net \
+            packaging/flatpak/dev.marcford.bfm.metainfo.xml
+
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: bfm.flatpak
+          manifest-path: packaging/flatpak/dev.marcford.bfm.yml
+          cache-key: flatpak-builder-${{ github.sha }}

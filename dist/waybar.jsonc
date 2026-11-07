@@ -11,7 +11,10 @@
       "idle": "",
       "buffering": "",
       "playing": "",
-      "paused": ""
+      "paused": "",
+      // Emitted when no daemon answers, so the module shows the outage
+      // rather than silently claiming "idle".
+      "unavailable": ""
     },
     "on-click": "bfm pause",
     "on-click-right": "bfm skip",

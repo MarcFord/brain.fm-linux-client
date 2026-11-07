@@ -322,13 +322,52 @@ fn validate_pasted_token(token: &str) -> Result<()> {
     Ok(())
 }
 
+/// Did a daemon actually answer?
+///
+/// Every property read in `print_status` falls back to a default on error,
+/// which is right for a daemon that is up but has nothing playing, and wrong
+/// for one that is not there at all: a dead daemon rendered as a healthy
+/// `idle`, so a broken install looked identical to a working one. One cheap
+/// probe separates the two.
+enum Reach {
+    Up,
+    Down(zbus::Error),
+}
+
 async fn status(
     conn: &zbus::Connection,
     bfm: &BrainFM1Proxy<'_>,
     json: bool,
     watch: bool,
 ) -> Result<()> {
-    print_status(bfm, json).await?;
+    // `--json` and `--watch` both want an absent daemon reported in-band
+    // rather than as a failed command: waybar renders nothing at all if the
+    // process exits, and a watcher should recover when the daemon returns.
+    // A plain one-shot `bfm status` is the opposite — it is what a person or
+    // a script runs to find out whether this works, so it must fail loudly.
+    let reach = print_status(bfm, json, json || watch).await?;
+    if let Reach::Down(e) = reach
+        && !watch
+        && !json
+    {
+        // Deliberately not `bail!`: an absent daemon is an expected state of
+        // the user's machine, not a fault in this binary, and color_eyre
+        // would dress it up as a crash with a source location and a
+        // backtrace hint. That framing buries the one thing the reader
+        // needs, which is what to go and check.
+        eprintln!(
+            "no bfm daemon answered on the session bus.\n\
+             \x20 {e}\n\n\
+             bfmd is normally D-Bus activated, so this usually means the \
+             service file is missing or the daemon failed to start:\n\
+             \x20 is it installed?  ls \"${{XDG_DATA_HOME:-$HOME/.local/share}}/dbus-1/services/dev.marcford.bfm.service\"\n\
+             \x20 does it run?      bfmd --version\n\
+             \x20 stale bus?        busctl --user call org.freedesktop.DBus \
+             /org/freedesktop/DBus org.freedesktop.DBus ReloadConfig\n\
+             \x20 what did it say?  journalctl --user -u bfmd -n 20"
+        );
+        std::process::exit(1);
+    }
     if !watch {
         return Ok(());
     }
@@ -343,12 +382,32 @@ async fn status(
 
     let mut changes = props.receive_properties_changed().await?;
     while changes.next().await.is_some() {
-        print_status(bfm, json).await?;
+        print_status(bfm, json, true).await?;
     }
     Ok(())
 }
 
-async fn print_status(bfm: &BrainFM1Proxy<'_>, json: bool) -> Result<()> {
+/// `render_down` decides whether an absent daemon is written to stdout at
+/// all. A one-shot plain `bfm status` must print nothing and fail instead,
+/// or a script reading stdout would treat the outage as a state.
+async fn print_status(bfm: &BrainFM1Proxy<'_>, json: bool, render_down: bool) -> Result<Reach> {
+    if let Err(e) = bfm.interface_version().await {
+        if render_down {
+            if json {
+                let obj = serde_json::json!({
+                    "text": "unavailable",
+                    "alt": "unavailable",
+                    "tooltip": "no bfm daemon on the session bus",
+                    "class": "unavailable",
+                });
+                println!("{obj}");
+            } else {
+                println!("unavailable");
+            }
+        }
+        return Ok(Reach::Down(e));
+    }
+
     let state = bfm.state().await.unwrap_or_else(|_| "idle".into());
     let track = bfm.track().await.unwrap_or_default();
     let name = track
@@ -392,5 +451,5 @@ async fn print_status(bfm: &BrainFM1Proxy<'_>, json: bool) -> Result<()> {
     } else {
         println!("{state}: {name}");
     }
-    Ok(())
+    Ok(Reach::Up)
 }

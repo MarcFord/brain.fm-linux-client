@@ -174,6 +174,24 @@ Always required: a C toolchain, `pkg-config`, ALSA headers, D-Bus.
 The daemon is **D-Bus activated**: you never start it by hand. The first
 call from any client launches it.
 
+#### The GTK app needs a recent GTK
+
+**GTK ≥ 4.22 and libadwaita ≥ 1.9.** Not a preference — the app uses
+`Picture::set_content_fit` and `ToolbarView`, so those are build-time
+minimums, and an older GTK cannot compile it at all.
+
+In practice that means rolling and recent distros: Arch, openSUSE
+Tumbleweed, current Fedora. **Debian 13 and Ubuntu 24.04 ship GTK 4.18 and
+4.14**, so the GTK app cannot be built there yet. `install.sh` checks the
+version and tells you, rather than failing ten minutes into a build, and it
+falls back to the Qt front-end or to a daemon-and-CLI install.
+
+The daemon, the CLI, MPRIS, media keys and the status bar have no such
+requirement and work everywhere. This is also why releases ship packages for
+the daemon and CLI only: a front-end built against a current GTK would carry
+a glibc too new for the distros those packages target, so the desktop apps
+are a build-from-source path for now.
+
 ---
 
 ## Signing in
@@ -344,9 +362,14 @@ broken.
 | tag `v*` | the gate again, then packages, checksums and a published release |
 
 Tagging `vX.Y.Z` publishes a release with `.deb` and `.rpm` packages for the
-daemon and both front-ends, a portable headless tarball, and `SHA256SUMS`.
-The tag has to match the version in `Cargo.toml` or the release refuses to
-build. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full picture.
+daemon and CLI, a portable headless tarball, and `SHA256SUMS`. The tag has to
+match the version in `Cargo.toml` or the release refuses to build. See
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for the full picture.
+
+The front-end jobs run in an Arch container rather than on the GitHub runner,
+because `ubuntu-latest` ships a GTK too old to build them at all. The fast
+gate excludes those two crates for the same reason and says so where it does
+it.
 
 ---
 

@@ -8,6 +8,13 @@ name: Full suite
 # `testing` exists so that this can be exercised before main. The two are
 # treated identically on purpose: a green `testing` must mean the same thing
 # as a green `main`, or it is not a useful rehearsal.
+#
+# Why the front-end jobs run in an Arch container rather than on the runner:
+# bfm-gtk opts into the gtk4 `v4_22` and libadwaita `v1_9` feature sets, so
+# GTK 4.22 is a hard build-time minimum. ubuntu-latest (24.04) ships GTK
+# 4.14, and no apt package changes that. The front-ends are therefore
+# impossible to build on the runner, not merely awkward, and they get an
+# environment where a current GTK and Kirigami 6 exist.
 on:
   push:
     branches: [main, testing]
@@ -34,46 +41,63 @@ jobs:
     name: Fast gate
     uses: ./.github/workflows/ci.yml
 
-  # Both front-ends, to prove pkg-config detection picks them up when the
-  # toolkits are present rather than only that it skips them when absent.
-  desktop:
-    name: Build both front-ends
+  # The front-ends: built, linted and tested where a current GTK exists.
+  # The fast gate excludes these crates because its runner cannot build them,
+  # so this is the only place they are checked at all.
+  front-ends:
+    name: Front-ends (current GTK/Qt)
     runs-on: ubuntu-latest
+    container: archlinux:latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Desktop toolkits
+      # Installed before checkout because actions/checkout wants git, and the
+      # base image has none.
+      - name: Toolchain and toolkits
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libasound2-dev pkg-config dbus \
-            libgtk-4-dev libadwaita-1-dev \
-            qt6-base-dev qt6-declarative-dev
+          pacman -Syu --noconfirm --needed \
+            base-devel git pkgconf dbus alsa-lib rust \
+            gtk4 libadwaita gtk4-layer-shell \
+            qt6-base qt6-declarative kirigami
+          echo "gtk4:       $(pkg-config --modversion gtk4)"
+          echo "libadwaita: $(pkg-config --modversion libadwaita-1)"
+          echo "cargo:      $(cargo --version)"
+
+      - uses: actions/checkout@v4
 
       - name: Report what detection found
         run: make detect
 
       # Detection claiming a toolkit it cannot build against would be worse
       # than not detecting it, so assert what `detect` actually said.
-      - name: Detection must have found GTK
+      - name: Detection must find both toolkits here
         run: |
+          . dist/ci-assert.sh
           make detect | tee /tmp/detect.txt
-          grep -qE 'GTK4 \+ libadwaita *: yes' /tmp/detect.txt \
-            || { echo "::error::GTK4 installed but not detected"; exit 1; }
+          assert_contains 'GTK4 + libadwaita *: yes' /tmp/detect.txt \
+            "GTK is installed but detection missed it"
+          assert_contains 'Kirigami *: yes' /tmp/detect.txt \
+            "Kirigami is installed but detection missed it"
 
-      - name: Build everything this machine supports
-        run: make build
+      - name: Build both front-ends
+        run: make build GUI=both
 
-      - name: Explicit GUI selections must all build
+      - name: Lint and test the front-end crates
         run: |
-          make build GUI=gtk
-          make build GUI=none
-          test -x target/release/bfmd
-          test -x target/release/bfm
+          cargo clippy -p bfm-gtk -p bfm-kde --all-targets
+          cargo test -p bfm-gtk -p bfm-kde
+
+      # install.sh must agree that this machine can build the GTK app. If the
+      # version gate is wrong in the strict direction it would silently stop
+      # shipping the GUI to everyone.
+      - name: install.sh agrees the GTK app is buildable here
+        run: |
+          . dist/ci-assert.sh
+          ./install.sh --dry-run --yes --skip-deps --gui gtk | tee /tmp/plan.txt
+          assert_contains 'GTK4 + libadwaita : yes' /tmp/plan.txt \
+            "the version gate rejected a current GTK"
+          assert_lacks 'too old' /tmp/plan.txt "version gate misfired"
 
   # The smoke checks are the only tests that exercise an installed tree
-  # rather than a cargo target dir. They are also the ones that have caught
-  # the most real bugs, so they gate the protected branches.
+  # rather than a cargo target dir, and they have caught the most real bugs.
   smoke:
     name: Smoke checks
     runs-on: ubuntu-latest
@@ -84,39 +108,40 @@ jobs:
       - name: Build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev pkg-config dbus \
-            libgtk-4-dev libadwaita-1-dev
+          sudo apt-get install -y libasound2-dev pkg-config dbus
 
       # smoke-layer needs a live Hyprland and exits 77 (skip) without one, so
-      # it reports "skipped" here rather than failing. smoke-install is the
-      # one that must actually run.
+      # it reports "skipped" here. smoke-install is the one that must run.
+      # GUI=none because this runner cannot build the front-ends.
       - name: make smoke
-        run: make smoke | tee /tmp/smoke.txt
+        run: make smoke GUI=none | tee /tmp/smoke.txt
 
       - name: The install smoke check must have really run, not skipped
         run: |
-          grep -q 'ok: installed tree activates on demand' /tmp/smoke.txt \
-            || { echo "::error::smoke-install did not run; a skip is not a pass"; exit 1; }
-          echo "ok: activation was genuinely verified"
+          . dist/ci-assert.sh
+          assert_contains 'ok: installed tree activates on demand' /tmp/smoke.txt \
+            "smoke-install skipped; a skip is not a pass"
 
   # `make install` is what distro packaging and install.sh both call, so each
-  # GUI selection gets a staged install and its layout asserted.
+  # GUI selection gets a staged install and its layout asserted. Runs in the
+  # Arch container because the gtk and both variants need a current GTK.
   install-layouts:
     name: Staged install (${{ matrix.gui }})
     runs-on: ubuntu-latest
+    container: archlinux:latest
     strategy:
       fail-fast: false
       matrix:
         gui: [none, gtk, both]
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Build dependencies
+      - name: Toolchain and toolkits
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libasound2-dev pkg-config dbus \
-            libgtk-4-dev libadwaita-1-dev qt6-base-dev qt6-declarative-dev
+          pacman -Syu --noconfirm --needed \
+            base-devel git pkgconf dbus alsa-lib rust \
+            gtk4 libadwaita gtk4-layer-shell \
+            qt6-base qt6-declarative kirigami
+
+      - uses: actions/checkout@v4
 
       - name: Stage an install to a system prefix
         run: |
@@ -185,9 +210,9 @@ jobs:
   # The names come from `install.sh --print-deps`, so CI reads the same tables
   # users get rather than a copy that drifts.
   #
-  # Run via `docker run` from an Ubuntu host rather than as a job `container:`,
-  # because the Actions runner's own node cannot execute inside musl images
-  # like Alpine, which would otherwise be untestable.
+  # Run via `docker run` rather than a job `container:`, because the Actions
+  # runner's own node cannot execute inside musl images like Alpine, which
+  # would otherwise be untestable.
   distro-deps:
     name: Deps resolve on ${{ matrix.name }}
     runs-on: ubuntu-latest
@@ -235,10 +260,11 @@ jobs:
               echo "ok: core dependencies resolve and alsa is usable"
             '
 
-      # KF6 and gtk4-layer-shell availability is a fact about each distro
-      # release, not a defect in this repo, so these report rather than gate.
-      # The output tells us which front-ends each distro can actually build.
-      - name: Resolve the GUI dependencies (informational)
+      # Which front-ends a distro can build is a fact about its release, not a
+      # defect here, so this reports instead of gating. The GTK app needs GTK
+      # >= 4.22, which fixed-release distros do not have yet; the output
+      # records where that currently stands.
+      - name: Which front-ends could this distro build? (informational)
         continue-on-error: true
         run: |
           docker run --rm -v "$PWD:/src" -w /src -e DEBIAN_FRONTEND=noninteractive \
@@ -247,19 +273,33 @@ jobs:
               ./install.sh --print-deps > /tmp/deps.txt
               gtk=$(sed -n "s/^gtk: //p" /tmp/deps.txt)
               kde=$(sed -n "s/^kde: //p" /tmp/deps.txt)
-              echo "--- gtk: $gtk"
+              echo "--- gtk group: $gtk"
               ${{ matrix.install }} $gtk || echo "WARN: gtk group did not resolve"
-              echo "--- kde: $kde"
+              echo "--- kde group: $kde"
               ${{ matrix.install }} $kde || echo "WARN: kde group did not resolve"
-              pkg-config --exists gtk4 libadwaita-1 && echo "GTK front-end: buildable" \
-                                                    || echo "GTK front-end: NOT buildable"
-              pkg-config --exists Qt6Core Qt6Quick  && echo "Qt present"  || echo "Qt absent"
+              if pkg-config --exists gtk4; then
+                v=$(pkg-config --modversion gtk4)
+                if pkg-config --atleast-version=4.22 gtk4; then
+                  echo "GTK front-end: buildable (gtk4 $v)"
+                else
+                  echo "GTK front-end: NOT buildable (gtk4 $v, needs >= 4.22)"
+                fi
+              else
+                echo "GTK front-end: no gtk4 at all"
+              fi
+              pkg-config --exists Qt6Core Qt6Quick && echo "Qt: present" || echo "Qt: absent"
             '
 
   # One tool, both formats, from the same staged `make install` tree, so a
   # .deb and an .rpm cannot disagree about what they contain. Packaging a
   # cargo artifact directly would ship the binary without its D-Bus service
   # file and the daemon would never activate.
+  #
+  # Daemon and CLI only. The front-ends cannot be packaged for fixed-release
+  # distros yet: they need GTK >= 4.22, and a binary built against a current
+  # GTK on a rolling distro would also carry a glibc too new for the distros
+  # these packages target. Front-ends are a build-from-source path for now,
+  # and install.sh refuses cleanly where the toolkit is too old.
   packages:
     name: Build and verify packages
     runs-on: ubuntu-latest
@@ -270,14 +310,13 @@ jobs:
       - name: Build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev pkg-config dbus rpm \
-            libgtk-4-dev libadwaita-1-dev qt6-base-dev qt6-declarative-dev
+          sudo apt-get install -y libasound2-dev pkg-config dbus rpm
       - uses: actions/setup-go@v5
         with: { go-version: stable }
       - run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
 
       - name: Build packages
-        run: make package
+        run: make package GUI=none
 
       - name: The daemon package must be self-sufficient and desktop-free
         run: |
@@ -292,29 +331,21 @@ jobs:
           assert_lacks 'bfm-gtk' /tmp/bfm.list "the daemon package must stay desktop-free"
           assert_lacks 'bfm-kde' /tmp/bfm.list "the daemon package must stay desktop-free"
 
-      - name: GUI packages carry only their own files and depend on the daemon
-        run: |
-          set -e
-          dpkg-deb -c dist-pkg/bfm-gtk_*_amd64.deb | grep -q 'usr/bin/bfm-gtk'
-          dpkg-deb -c dist-pkg/bfm-gtk_*_amd64.deb | grep -q 'applications/.*gtk.desktop'
-          dpkg-deb -f dist-pkg/bfm-gtk_*_amd64.deb Depends | grep -q 'bfm ('
-          echo "ok: gtk package"
-
       - name: The rpm must contain the same things
         run: |
-          set -e
-          rpm -qlp dist-pkg/bfm-*.x86_64.rpm | tee /tmp/bfm.rpm.list
-          grep -q '/usr/bin/bfmd' /tmp/bfm.rpm.list
-          grep -q 'dbus-1/services/dev.marcford.bfm.service' /tmp/bfm.rpm.list
-          grep -q 'systemd/user/bfmd.service' /tmp/bfm.rpm.list
-          echo "ok: rpm contents match the deb"
+          . dist/ci-assert.sh
+          rpm -qlp dist-pkg/bfm-*.x86_64.rpm > /tmp/bfm.rpm.list
+          cat /tmp/bfm.rpm.list
+          assert_contains '/usr/bin/bfmd' /tmp/bfm.rpm.list
+          assert_contains 'dbus-1/services/dev.marcford.bfm.service' /tmp/bfm.rpm.list
+          assert_contains 'systemd/user/bfmd.service' /tmp/bfm.rpm.list
 
       - name: Install the deb for real and confirm it is usable
         run: |
-          set -e
+          . dist/ci-assert.sh
           sudo apt-get install -y ./dist-pkg/bfm_*_amd64.deb
-          command -v bfmd
-          command -v bfm
+          assert_command bfmd
+          assert_command bfm
           bfm --help >/dev/null
           bfm --version
           # Activation from a real package install, on a private bus.
@@ -322,9 +353,7 @@ jobs:
             dev.marcford.bfm /dev/marcford/bfm dev.marcford.BrainFM1 \
             InterfaceVersion > /tmp/v.txt 2>&1' || true
           cat /tmp/v.txt
-          grep -q '^u ' /tmp/v.txt \
-            || { echo "::error::packaged daemon did not activate"; exit 1; }
-          echo "ok: the packaged daemon activates on demand"
+          assert_contains '^u ' /tmp/v.txt "the packaged daemon did not activate"
 
       - name: Removing the package leaves nothing behind
         run: |

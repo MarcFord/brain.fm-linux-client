@@ -90,9 +90,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev pkg-config dbus \
-            libgtk-4-dev libadwaita-1-dev
-      - run: make smoke | tee /tmp/smoke.txt
+          sudo apt-get install -y libasound2-dev pkg-config dbus
+      - run: make smoke GUI=none | tee /tmp/smoke.txt
       - name: A skip is not a pass
         run: |
           grep -q 'ok: installed tree activates on demand' /tmp/smoke.txt \
@@ -108,47 +107,44 @@ jobs:
           ref: ${{ github.event.inputs.tag || github.ref }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Build dependencies, both desktop toolkits
+      # No desktop toolkits: the front-ends are not packaged. They need GTK
+      # >= 4.22, which no fixed-release distro ships yet, and a binary built
+      # against a current GTK on a rolling distro would carry a glibc too new
+      # for the distros these packages target. Front-ends are
+      # build-from-source via install.sh, which refuses cleanly on an old
+      # toolkit.
+      - name: Build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev pkg-config dbus rpm \
-            libgtk-4-dev libadwaita-1-dev qt6-base-dev qt6-declarative-dev
+          sudo apt-get install -y libasound2-dev pkg-config dbus rpm
       - uses: actions/setup-go@v5
         with: { go-version: stable }
       - run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
 
       - name: Build packages
-        run: make package
+        run: make package GUI=none
 
-      # Three packages, so a server never pulls in a desktop stack and a
-      # GNOME user never installs Qt.
-      - name: All three packages exist, in both formats
+      - name: The daemon package exists in both formats
         run: |
-          set -e
+          . dist/ci-assert.sh
           ls -1 dist-pkg/
           V='${{ needs.verify.outputs.version }}'
-          for p in bfm bfm-gtk bfm-kde; do
-            ls dist-pkg/${p}_${V}_amd64.deb >/dev/null \
-              || { echo "::error::missing deb for $p"; exit 1; }
-            ls dist-pkg/${p}-${V}-*.x86_64.rpm >/dev/null \
-              || { echo "::error::missing rpm for $p"; exit 1; }
-          done
-          echo "ok: six packages at version $V"
+          assert_present "dist-pkg/bfm_${V}_amd64.deb"
+          ls "dist-pkg/bfm-${V}"-*.x86_64.rpm >/dev/null \
+            || { echo "::error::missing rpm at version ${V}"; exit 1; }
+          echo "ok: deb and rpm at version $V"
 
       - name: The daemon package must be self-sufficient and desktop-free
         run: |
           . dist/ci-assert.sh
           dpkg-deb -c dist-pkg/bfm_*_amd64.deb | tee /tmp/bfm.list
           assert_contains 'usr/bin/bfmd' /tmp/bfm.list
+          assert_contains 'usr/bin/bfm' /tmp/bfm.list
           assert_contains 'dbus-1/services/dev.marcford.bfm.service' /tmp/bfm.list \
             "without this the daemon never activates"
           assert_contains 'systemd/user/bfmd.service' /tmp/bfm.list
           assert_lacks 'bfm-gtk' /tmp/bfm.list "the daemon package must stay desktop-free"
           assert_lacks 'bfm-kde' /tmp/bfm.list "the daemon package must stay desktop-free"
-          dpkg-deb -f dist-pkg/bfm-gtk_*_amd64.deb Depends > /tmp/gtk.dep
-          dpkg-deb -f dist-pkg/bfm-kde_*_amd64.deb Depends > /tmp/kde.dep
-          assert_contains 'bfm (' /tmp/gtk.dep "the GUI package must depend on the daemon"
-          assert_contains 'bfm (' /tmp/kde.dep "the GUI package must depend on the daemon"
           rpm -qlp dist-pkg/bfm-${{ needs.verify.outputs.version }}-*.x86_64.rpm > /tmp/rpm.list
           assert_contains 'dbus-1/services/dev.marcford.bfm.service' /tmp/rpm.list \
             "the rpm must carry the same service file as the deb"
@@ -215,27 +211,33 @@ jobs:
             echo
             echo "## Install"
             echo
+            echo 'The packages here are the daemon and CLI, which is everything you'
+            echo 'need for playback, MPRIS, media keys and a status bar.'
+            echo
             echo '### Debian, Ubuntu'
             echo '```sh'
-            echo "sudo apt install ./bfm_${V}_amd64.deb        # daemon + CLI"
-            echo "sudo apt install ./bfm-gtk_${V}_amd64.deb    # GNOME/Hyprland app"
-            echo "sudo apt install ./bfm-kde_${V}_amd64.deb    # Plasma app"
+            echo "sudo apt install ./bfm_${V}_amd64.deb"
             echo '```'
             echo
             echo '### Fedora, RHEL, openSUSE'
             echo '```sh'
             echo "sudo dnf install ./bfm-${V}-1.x86_64.rpm"
-            echo "sudo dnf install ./bfm-gtk-${V}-1.x86_64.rpm"
             echo '```'
             echo
-            echo '### Any other distro, from source'
+            echo '### Desktop apps, and any other distro'
             echo '```sh'
             echo "git clone --branch ${TAG} https://github.com/${GITHUB_REPOSITORY}"
             echo "cd $(basename "${GITHUB_REPOSITORY}") && ./install.sh"
             echo '```'
             echo
-            echo "The GUI packages depend on \`bfm\`, so a server never pulls in a"
-            echo "desktop stack. \`SHA256SUMS\` covers every asset here."
+            echo 'The GTK and Qt front-ends are not prebuilt. The GTK app needs'
+            echo 'GTK >= 4.22 and libadwaita >= 1.9, which fixed-release distros do'
+            echo 'not ship yet, and a binary built against a current GTK would carry'
+            echo "a glibc too new for the distros these packages target. \`install.sh\`"
+            echo 'builds whichever front-end your system can actually support, and'
+            echo 'says so plainly when the toolkit is too old.'
+            echo
+            echo "\`SHA256SUMS\` covers every asset here."
             echo
             echo "## Changes"
             echo

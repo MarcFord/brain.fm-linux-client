@@ -46,11 +46,20 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
 
-      - name: Clippy
-        run: cargo clippy --workspace --all-targets --all-features
+      # The front-ends are excluded here, and only here, for a hard reason:
+      # bfm-gtk opts into the gtk4 `v4_22` feature set, and ubuntu-latest
+      # (24.04) ships GTK 4.14. No apt package fixes that, so building them
+      # on this runner is impossible rather than merely slow. They are built
+      # and linted in full.yml, in a container that has a current GTK.
+      - name: Clippy (core crates)
+        run: |
+          cargo clippy --workspace --all-targets --all-features \
+            --exclude bfm-gtk --exclude bfm-kde
 
-      - name: Test
-        run: cargo test --workspace --all-features
+      - name: Test (core crates)
+        run: |
+          cargo test --workspace --all-features \
+            --exclude bfm-gtk --exclude bfm-kde
 
       # The D-Bus surface is this project's public API, so it is tested like
       # one: against a private bus, never a developer's session bus. These
@@ -69,6 +78,9 @@ jobs:
       - name: shellcheck
         run: |
           sudo apt-get update && sudo apt-get install -y shellcheck
+          # Printed because versions differ: 0.9 flags SC2015 where 0.11 does
+          # not, so a clean local run is not proof of a clean CI run.
+          shellcheck --version
           shellcheck -s sh install.sh dist/smoke-install.sh dist/smoke-layer.sh \
             dist/ci-assert-test.sh
           # Sourced, so it carries its own `shellcheck shell=sh` directive.
@@ -140,4 +152,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.98.1
       - uses: Swatinem/rust-cache@v2
       - run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
-      - run: cargo check --workspace --all-features
+      # Front-ends excluded for the same reason as above: this runner's GTK is
+      # too old to build them at any Rust version. full.yml covers them.
+      - run: |
+          cargo check --workspace --all-features \
+            --exclude bfm-gtk --exclude bfm-kde

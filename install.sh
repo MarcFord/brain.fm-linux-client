@@ -230,7 +230,25 @@ if [ "$(id -u)" != 0 ] && [ "$SKIP_DEPS" = 0 ]; then
 fi
 
 # -------------------------------------------------------- toolkit detection
-has_gtk() { pkg-config --exists gtk4 libadwaita-1 2>/dev/null; }
+# Presence is not enough. bfm-gtk opts into the gtk4 `v4_22` and libadwaita
+# `v1_9` feature sets, because it uses Picture::set_content_fit and
+# ToolbarView, so those are hard build-time minimums. Ubuntu 24.04 ships GTK
+# 4.14 and Debian 13 ships 4.18: pkg-config --exists succeeds on both and the
+# build then dies ten minutes in with a gdk4-sys error naming a version
+# nobody can install. Check the version here instead.
+GTK_MIN=4.22
+ADW_MIN=1.9
+has_gtk() {
+    pkg-config --exists gtk4 libadwaita-1 2>/dev/null || return 1
+    pkg-config --atleast-version="$GTK_MIN" gtk4 2>/dev/null || return 1
+    pkg-config --atleast-version="$ADW_MIN" libadwaita-1 2>/dev/null
+}
+
+# Distinguish "no GTK" from "GTK too old", so the message can say which.
+gtk_too_old() {
+    pkg-config --exists gtk4 2>/dev/null || return 1
+    ! pkg-config --atleast-version="$GTK_MIN" gtk4 2>/dev/null
+}
 has_qt()  { pkg-config --exists Qt6Core Qt6Quick 2>/dev/null; }
 has_kirigami() {
     qmldir=$(pkg-config --variable=QT_INSTALL_QML Qt6Core 2>/dev/null || true)
@@ -270,11 +288,17 @@ fi
 if [ "$DO_UNINSTALL" = 1 ]; then
     step "Removing bfm from $PREFIX"
     run $SUDO make -C "$SELF_DIR" uninstall PREFIX="$PREFIX"
-    if [ -z "$SUDO" ]; then
-        have systemctl && run systemctl --user daemon-reload || true
+    # `A && B || C` is not if-then-else: C runs when B fails too. These are
+    # all best-effort refreshes, so each one is an explicit if instead.
+    if [ -z "$SUDO" ] && have systemctl; then
+        run systemctl --user daemon-reload || true
     fi
-    have update-desktop-database && run update-desktop-database "$PREFIX/share/applications" 2>/dev/null || true
-    have gtk-update-icon-cache && run gtk-update-icon-cache -q -f -t "$PREFIX/share/icons/hicolor" 2>/dev/null || true
+    if have update-desktop-database; then
+        run update-desktop-database "$PREFIX/share/applications" 2>/dev/null || true
+    fi
+    if have gtk-update-icon-cache; then
+        run gtk-update-icon-cache -q -f -t "$PREFIX/share/icons/hicolor" 2>/dev/null || true
+    fi
     say ""
     say "Removed. A session token may remain in your keyring; clear it with:"
     say "  secret-tool clear service bfm   # or your keyring's own UI"
@@ -381,7 +405,18 @@ step "Checking toolkits"
 gtk_ok=no; kde_ok=no
 has_gtk && gtk_ok=yes
 { has_qt && has_kirigami; } && kde_ok=yes
-say "  GTK4 + libadwaita : $gtk_ok"
+if [ "$gtk_ok" = yes ]; then
+    say "  GTK4 + libadwaita : yes ($(pkg-config --modversion gtk4), libadwaita $(pkg-config --modversion libadwaita-1))"
+elif gtk_too_old; then
+    say "  GTK4 + libadwaita : too old (gtk4 $(pkg-config --modversion gtk4); needs >= $GTK_MIN)"
+    warn "The GTK app needs GTK >= $GTK_MIN and libadwaita >= $ADW_MIN. Your distro"
+    warn "ships an older GTK, so it cannot be built here. The daemon and CLI are"
+    warn "unaffected, and the Qt front-end may still work. Debian, Ubuntu and other"
+    warn "fixed-release distros will catch up; rolling ones (Arch, Tumbleweed) and"
+    warn "recent Fedora already have it."
+else
+    say "  GTK4 + libadwaita : no"
+fi
 say "  Qt6 + Kirigami    : $kde_ok"
 
 BUILD_GUI=$WANT

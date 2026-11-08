@@ -72,7 +72,7 @@ enum Command {
     },
     /// List what the catalog offers.
     List {
-        /// states | activities | genres
+        /// states | activities | genres | session-lengths
         what: String,
         #[arg(long, default_value = "focus")]
         state: String,
@@ -178,7 +178,32 @@ async fn main() -> Result<()> {
                     println!("{g}");
                 }
             }
-            other => bail!("don't know how to list {other:?}; try states, activities or genres"),
+            // The interface has exposed these since version 2, but the CLI
+            // never did, which left every CLI-driven client hard-coding
+            // durations — exactly what `ListSessionLengths` exists to prevent,
+            // since a sleep session is nine hours and a focus session ninety
+            // minutes.
+            "session-lengths" | "lengths" => {
+                // Only act on a version that was actually read. A failed read
+                // means the daemon is unreachable, not that it is ancient, and
+                // reporting the latter for the former is a bug this project
+                // has already shipped once.
+                if let Ok(v) = bfm.interface_version().await
+                    && v < 2
+                {
+                    bail!(
+                        "the running daemon serves BrainFM1 version {v}; \
+                         session lengths need version 2 or newer"
+                    );
+                }
+                for (seconds, label) in bfm.list_session_lengths(&state).await? {
+                    println!("{seconds}\t{label}");
+                }
+            }
+            other => bail!(
+                "don't know how to list {other:?}; \
+                 try states, activities, genres or session-lengths"
+            ),
         },
 
         Command::Status { json, watch } => status(&conn, &bfm, json, watch).await?,

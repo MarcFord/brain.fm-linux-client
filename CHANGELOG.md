@@ -54,6 +54,13 @@ entry here.
 
 ### Added
 
+- `bfm list session-lengths [--state <s>]`, printing `seconds<TAB>label`.
+  `ListSessionLengths` has been on the interface since version 2, but the CLI
+  never exposed it, so every CLI-driven client had to hard-code durations —
+  precisely what that method exists to prevent. The real lists diverge sharply
+  by state: focus suggests 60/90/120 minutes, relax 15/45/60, and sleep
+  7/8/9 *hours*, so one hardcoded list is wrong for most states. Reported by a
+  bar widget that had to invent its own.
 - AppStream metadata for the Flatpak
   (`packaging/flatpak/dev.marcford.bfm.metainfo.xml`), so the app presents
   itself properly to software centres. Validated by `appstreamcli` in CI,

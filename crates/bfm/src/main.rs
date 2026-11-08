@@ -77,6 +77,15 @@ enum Command {
         #[arg(long, default_value = "focus")]
         state: String,
     },
+    /// Report what this binary guarantees, for clients that gate on it.
+    ///
+    /// Needs no daemon and no session bus: it describes this executable, not
+    /// a running service.
+    Capabilities {
+        /// Emit JSON instead of one `key value` per line.
+        #[arg(long)]
+        json: bool,
+    },
     /// Print current status.
     Status {
         /// Emit a waybar-shaped JSON object.
@@ -88,10 +97,65 @@ enum Command {
     },
 }
 
+/// Behaviours this binary promises, named so a client can gate on evidence
+/// rather than on a version string.
+///
+/// **Only CLI behaviour belongs here.** Daemon features are gated on
+/// `InterfaceVersion` read over D-Bus, and advertising them here would lie
+/// the moment a new CLI is pointed at an old daemon — which is exactly the
+/// situation a probe like this exists to resolve.
+///
+/// Names are permanent once released. Dropping one is a breaking change for
+/// anything that gates on it, so a behaviour that might be withdrawn should
+/// not be listed in the first place.
+const CAPABILITIES: &[(&str, &str)] = &[
+    (
+        "status-unavailable-in-band",
+        "`status --json` reports an absent daemon as class \"unavailable\"          with a zero exit, rather than failing or claiming idle",
+    ),
+    (
+        "watch-follows-daemon",
+        "`status --watch` emits \"unavailable\" when the daemon goes away and          a fresh state line when it returns, so the stream alone is enough          for liveness",
+    ),
+    (
+        "list-session-lengths",
+        "`list session-lengths` exists, so a client need not invent durations          (the daemon must also serve interface version 2 or newer)",
+    ),
+];
+
+fn print_capabilities(json: bool) {
+    let names: Vec<&str> = CAPABILITIES.iter().map(|(n, _)| *n).collect();
+    if json {
+        // `interfaceVersion` is what this CLI was *built against*. It is not
+        // the running daemon's, which is a separate D-Bus read and may be
+        // lower. Gate daemon features on that, not on this.
+        let obj = serde_json::json!({
+            "version": env!("CARGO_PKG_VERSION"),
+            "interfaceVersion": bfm_proto::INTERFACE_VERSION,
+            "features": names,
+        });
+        println!("{obj}");
+    } else {
+        println!("version {}", env!("CARGO_PKG_VERSION"));
+        println!("interface {}", bfm_proto::INTERFACE_VERSION);
+        for name in names {
+            println!("feature {name}");
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     color_eyre::install()?;
     let cli = Cli::parse();
+
+    // Answered before any D-Bus work: this describes the binary, so it must
+    // work on a machine with no session bus and must never activate a daemon
+    // merely to be asked what it can do.
+    if let Command::Capabilities { json } = cli.command {
+        print_capabilities(json);
+        return Ok(());
+    }
 
     let conn = zbus::Connection::session()
         .await
@@ -211,6 +275,8 @@ async fn main() -> Result<()> {
         },
 
         Command::Status { json, watch } => status(&conn, &bfm, json, watch).await?,
+        // Handled above, before the bus connection.
+        Command::Capabilities { .. } => unreachable!("handled before connecting"),
     }
     Ok(())
 }

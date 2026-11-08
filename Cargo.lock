@@ -337,7 +337,7 @@ checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
 
 [[package]]
 name = "bfm"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bfm-proto",
  "bfm-ui-core",
@@ -352,7 +352,7 @@ dependencies = [
 
 [[package]]
 name = "bfm-api"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "base64 0.23.1",
  "reqwest",
@@ -367,7 +367,7 @@ dependencies = [
 
 [[package]]
 name = "bfm-gtk"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bfm-ui-core",
  "clap",
@@ -381,7 +381,7 @@ dependencies = [
 
 [[package]]
 name = "bfm-kde"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bfm-ui-core",
  "clap",
@@ -395,7 +395,7 @@ dependencies = [
 
 [[package]]
 name = "bfm-player"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "rodio",
  "stream-download",
@@ -406,7 +406,7 @@ dependencies = [
 
 [[package]]
 name = "bfm-proto"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "serde",
  "zbus 6.2.1",
@@ -414,7 +414,7 @@ dependencies = [
 
 [[package]]
 name = "bfm-ui-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-channel",
  "base64 0.23.1",
@@ -429,7 +429,7 @@ dependencies = [
 
 [[package]]
 name = "bfmd"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "base64 0.23.1",
  "bfm-api",

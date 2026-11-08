@@ -83,6 +83,15 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.1.2" date="2026-11-07">
+      <description>
+        <p>
+          Adds a capability probe, so a client can detect which behaviours
+          this build guarantees instead of inferring them from a version.
+        </p>
+      </description>
+      <url type="details">https://github.com/MarcFord/brain.fm-linux-client/releases/tag/v0.1.2</url>
+    </release>
     <release version="0.1.1" date="2026-11-07">
       <description>
         <p>

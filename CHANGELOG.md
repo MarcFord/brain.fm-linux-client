@@ -23,6 +23,37 @@ entry here.
 
 Nothing yet.
 
+## [0.1.2] — 2026-11-07
+
+Serves `BrainFM1` interface version **6**, unchanged from 0.1.1.
+
+### Added
+
+- **`bfm capabilities`**, so a client can gate on evidence rather than on a
+  version string. Prints the named behaviours this binary guarantees, as JSON
+  or as greppable `key value` lines.
+
+  It exists because not every guarantee is visible on the bus. `--watch`
+  following the daemon in and out of existence, added in 0.1.1, is *behaviour*
+  rather than a D-Bus member: no interface version moves for it, and nothing
+  on the bus reveals it. A client could only trust a README line, and being
+  wrong meant a status bar showing `playing` for a daemon that was gone — a
+  bar that looks like a working bar, which is the least diagnosable failure
+  this project has. Raised by the Omarchy plugin, which was carrying a
+  workaround precisely because the fix was undetectable.
+
+  Deliberate properties:
+
+  - It needs **no session bus and no daemon**, and starts neither. Asking a
+    program what it can do must not require running a service.
+  - It advertises **CLI behaviour only**. Daemon features stay gated on
+    `InterfaceVersion`, because a probe that claimed them would lie the
+    moment a new CLI met an old daemon — the exact case it exists to resolve.
+  - `interfaceVersion` in the output is what the CLI was *built against*, not
+    what any daemon serves.
+  - Feature names are **permanent**; a test locks the released set so a
+    rename cannot pass silently.
+
 ## [0.1.1] — 2026-11-07
 
 Serves `BrainFM1` interface version **6**.
@@ -235,6 +266,7 @@ First release. Serves `BrainFM1` interface version 5.
 - Brain.fm's API is private and undocumented. It can change without notice;
   when it does, the fix belongs in `bfm-api` and nowhere else.
 
-[Unreleased]: https://github.com/MarcFord/brain.fm-linux-client/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/MarcFord/brain.fm-linux-client/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/MarcFord/brain.fm-linux-client/releases/tag/v0.1.2
 [0.1.1]: https://github.com/MarcFord/brain.fm-linux-client/releases/tag/v0.1.1
 [0.1.0]: https://github.com/MarcFord/brain.fm-linux-client/releases/tag/v0.1.0

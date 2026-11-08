@@ -343,6 +343,52 @@ triggered by the same event may finish in either order. A malformed
 
 ---
 
+## Writing a client that degrades well
+
+Two different things are versioned, and you need the right one for each.
+
+**Daemon features** — methods, properties, signals — are gated on
+`InterfaceVersion`, read over D-Bus. It only ever rises and only ever gains
+members, so `>= n` is a safe test. Treat a *failed read* as "the daemon is
+unreachable", never as "version 0": that mistake shipped here once and
+rendered a missing daemon as "your daemon is too old".
+
+**CLI behaviours** are gated on `bfm capabilities`, because some of them are
+not visible in the D-Bus interface at all. The status stream following the
+daemon in and out of existence is behaviour, not a member, so no interface
+number moves when it changes and nothing on the bus reveals it.
+
+```sh
+$ bfm capabilities --json
+{"version":"0.1.2","interfaceVersion":6,
+ "features":["status-unavailable-in-band","watch-follows-daemon","list-session-lengths"]}
+
+$ bfm capabilities          # same thing, greppable
+version 0.1.2
+interface 6
+feature status-unavailable-in-band
+feature watch-follows-daemon
+feature list-session-lengths
+```
+
+- It needs **no session bus and no daemon**, and starts neither. Asking a
+  program what it can do must not require running a service.
+- `interfaceVersion` is what this CLI was **built against**, not what any
+  daemon serves. Gate daemon features on the D-Bus property, not on this.
+- Feature names are **permanent**. A name that might be withdrawn should not
+  be published in the first place.
+- On a binary too old to have the probe, the command fails with a non-zero
+  exit and no JSON. Treat that as "guarantees nothing" rather than as an
+  error.
+
+| Feature | Meaning |
+|---|---|
+| `status-unavailable-in-band` | `status --json` reports an absent daemon as `class: "unavailable"` with a zero exit, rather than failing or claiming `idle` |
+| `watch-follows-daemon` | `status --watch` emits `unavailable` when the daemon goes away and a fresh state line when it returns, so the stream alone is enough for liveness |
+| `list-session-lengths` | `list session-lengths` exists, so a client need not invent durations (the daemon must also serve interface 2 or newer) |
+
+---
+
 ## Writing your own client
 
 The D-Bus interface is the contract, and it is meant to be used.

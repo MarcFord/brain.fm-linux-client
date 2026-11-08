@@ -61,6 +61,14 @@ entry here.
 - The Flatpak bundle is now also built on pushes to the protected branches,
   not only on tags, so the manifest can be iterated on without cutting a
   release. It is informational in both places and gates nothing.
+
+  With the above fixed it now builds end to end for the first time:
+  `appstreamcli compose` succeeds, the icon, D-Bus service file and metainfo
+  are exported, and `flatpak build-bundle` produces a bundle. It stays
+  non-blocking for two honest reasons: nothing yet checks that the bundle
+  installs and launches, which is a stronger claim than that it compiles; and
+  it pulls runtimes from Flathub, so an outage there is not a reason to block
+  a release.
 - The full suite runs on pull requests into `main` and `testing`, which is
   what lets it be a *required* check there. Both branches are now protected
   and require all seventeen of its jobs.

@@ -215,7 +215,9 @@ impl BrainFm {
         if !timer.trim().is_empty() {
             let spec = TimerSpec::parse(timer)
                 .map_err(|e| zbus::fdo::Error::InvalidArgs(e.to_string()))?;
-            self.timer = Some(Timer::start(spec));
+            // With the text, so `Timer.spec` reads back for a timer set this
+            // way too rather than only via SetTimer.
+            self.timer = Some(Timer::start_with_text(spec, timer.trim().to_owned()));
         }
 
         if self.favorites.is_empty() {
@@ -281,6 +283,14 @@ impl BrainFm {
         let _ = Self::session_started(&emitter, &serving.track.id).await;
         let _ = Self::track_started(&emitter, &serving.track.name, length).await;
 
+        // A session started with a timer counts as the timer being set; a
+        // script watching for a pomodoro beginning should not have to know
+        // which call created it.
+        if self.timer.is_some() {
+            self.hooks.fire(&hooks::Event::TimerSet {
+                shape: self.timer_shape(),
+            });
+        }
         self.hooks.fire(&hooks::Event::SessionStart {
             state: state.to_owned(),
             activity: activity_id,
@@ -405,14 +415,23 @@ impl BrainFm {
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> zbus::fdo::Result<()> {
         if spec.trim().is_empty() {
+            let had_one = self.timer.is_some();
             self.timer = None;
             let _ = self.timer_changed(&emitter).await;
+            // Only when there was something to clear, so a script is not told
+            // about a no-op.
+            if had_one {
+                self.hooks.fire(&hooks::Event::TimerCleared);
+            }
             return Ok(());
         }
         let parsed =
             TimerSpec::parse(spec).map_err(|e| zbus::fdo::Error::InvalidArgs(e.to_string()))?;
         self.timer = Some(Timer::start_with_text(parsed, spec.trim().to_owned()));
         let _ = self.timer_changed(&emitter).await;
+        self.hooks.fire(&hooks::Event::TimerSet {
+            shape: self.timer_shape(),
+        });
         Ok(())
     }
 
@@ -886,6 +905,22 @@ impl BrainFm {
     }
 
     /// Fire a lifecycle hook. Used by the daemon tick for timer phases.
+    /// Describe the running timer for a hook. One place, so the hook
+    /// environment and the `Timer` property cannot drift apart.
+    pub fn timer_shape(&self) -> hooks::TimerShape {
+        match self.timer.as_ref() {
+            Some(t) => hooks::TimerShape {
+                spec: t.text().to_owned(),
+                mode: t.mode().as_str().to_owned(),
+                cycle: t.cycle(),
+                cycles: t.cycles(),
+                unbounded: t.is_unbounded(),
+                total: t.total().as_secs(),
+            },
+            None => hooks::TimerShape::default(),
+        }
+    }
+
     pub fn fire_hook(&self, event: &hooks::Event) {
         self.hooks.fire(event);
     }

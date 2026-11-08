@@ -305,10 +305,41 @@ timer_phase   = "notify-send 'brain.fm' \"$BFM_TIMER_PHASE\""
 | `session_start` | `BFM_STATE`, `BFM_ACTIVITY` |
 | `session_end` | `BFM_REASON` — `stopped`, `track-ended`, `timer-elapsed` |
 | `track_start` | `BFM_TRACK`, `BFM_LENGTH` |
-| `timer_phase` | `BFM_TIMER_PHASE`, `BFM_TIMER_REMAINING` |
+| `timer_set` | the timer variables below |
+| `timer_phase` | `BFM_TIMER_PHASE` — `work`, `break`, `done` — plus `BFM_TIMER_REMAINING` and the timer variables below |
+| `timer_cleared` | none: there is no longer a timer |
+
+`timer_set` fires when a timer is set or replaced, including by
+`bfm play --timer`. It is separate from `timer_phase`, which only fires on
+*transitions* — the first work period begins without one, so there was
+otherwise nothing to hook when a pomodoro started. `timer_cleared` only fires
+when there was a timer to clear.
+
+Every timer event carries the shape of the timer, so an intervals script can
+act on where it is rather than only on what just happened:
+
+| Variable | |
+|---|---|
+| `BFM_TIMER_SPEC` | as set, e.g. `25m/5m x4` |
+| `BFM_TIMER_MODE` | `countdown` or `intervals` |
+| `BFM_TIMER_CYCLE` | 1-based work period in progress |
+| `BFM_TIMER_CYCLES` | configured count, `0` when endless |
+| `BFM_TIMER_UNBOUNDED` | `1` for `25m/5m x*`, which never ends on its own |
+| `BFM_TIMER_TOTAL` | configured seconds, `0` when endless |
+
+```toml
+# "Break 3 of 4, 5 minutes" rather than just "break"
+timer_phase = '''notify-send "brain.fm" "$BFM_TIMER_PHASE $BFM_TIMER_CYCLE/$BFM_TIMER_CYCLES"'''
+
+# Do-not-disturb for the duration of a pomodoro, however it was started
+timer_set     = "makoctl mode -a dnd"
+timer_cleared = "makoctl mode -r dnd"
+```
 
 Hooks are fire-and-forget: a slow one cannot stall playback, and two
-triggered by the same event may finish in either order.
+triggered by the same event may finish in either order. A malformed
+`config.toml` is logged and ignored rather than stopping the daemon, so check
+`journalctl --user -u bfmd` if a hook never runs.
 
 ---
 

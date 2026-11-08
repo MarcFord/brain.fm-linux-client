@@ -124,6 +124,7 @@ async fn tick_timer_forever(conn: &zbus::Connection) -> Result<()> {
         iface.fire_hook(&hooks::Event::TimerPhase {
             phase: phase.as_str().to_owned(),
             remaining,
+            shape: iface.timer_shape(),
         });
 
         // A finished timer ends the session - that is the whole point of

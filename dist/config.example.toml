@@ -18,4 +18,24 @@ session_end = "makoctl mode -r dnd"
 
 # A timer moved between phases. $BFM_TIMER_PHASE is work | break | done,
 # $BFM_TIMER_REMAINING is seconds.
-timer_phase = "notify-send 'brain.fm' \"$BFM_TIMER_PHASE — ${BFM_TIMER_REMAINING}s left\""
+#
+# Every timer event also carries the shape of the timer, so an intervals
+# script can say which cycle it is on rather than only which phase:
+#   $BFM_TIMER_SPEC       as set, e.g. 25m/5m x4
+#   $BFM_TIMER_MODE       countdown | intervals
+#   $BFM_TIMER_CYCLE      1-based work period in progress
+#   $BFM_TIMER_CYCLES     configured count, 0 when endless
+#   $BFM_TIMER_UNBOUNDED  1 for "25m/5m x*", which never ends on its own
+#   $BFM_TIMER_TOTAL      configured seconds, 0 when endless
+timer_phase = "notify-send 'brain.fm' \"$BFM_TIMER_PHASE ${BFM_TIMER_CYCLE}/${BFM_TIMER_CYCLES} — ${BFM_TIMER_REMAINING}s left\""
+
+# A timer was set or replaced. Same variables as above.
+#
+# Distinct from timer_phase, which only fires on *transitions*: the first work
+# period begins without a phase change, so there was nothing to hook when a
+# pomodoro started.
+# timer_set = "makoctl mode -a dnd"
+
+# A timer was cleared, leaving the session open-ended. No timer variables,
+# because there is no longer a timer. Only fires when there was one.
+# timer_cleared = "makoctl mode -r dnd"

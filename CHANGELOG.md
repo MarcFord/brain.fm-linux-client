@@ -23,6 +23,17 @@ entry here.
 
 ### Added
 
+- **Timer hooks you can script against.** `timer_set` and `timer_cleared` are
+  new, and every timer event — including the existing `timer_phase` — now
+  carries the shape of the timer: `BFM_TIMER_SPEC`, `BFM_TIMER_MODE`,
+  `BFM_TIMER_CYCLE`, `BFM_TIMER_CYCLES`, `BFM_TIMER_UNBOUNDED` and
+  `BFM_TIMER_TOTAL`.
+
+  Two gaps closed. `timer_phase` fires only on *transitions*, and the first
+  work period begins without one, so there was nothing to hook when a pomodoro
+  started — `timer_set` covers that, including when the timer came from
+  `bfm play --timer`. And the hook environment knew less than the `Timer` D-Bus
+  property did: a script could see `break` but not that it was break 3 of 4.
 - **Endless intervals.** `"25m/5m x*"` (or `xinf`) cycles work and break until
   stopped, matching what the web player's intervals mode actually does. There
   was previously no spec for it at all: a missing count means exactly one
@@ -43,6 +54,12 @@ entry here.
 
 ### Fixed
 
+- **`StartSession` did not record the timer spec**, so `Timer.spec` came back
+  empty for a session started with `--timer` while being correct for one set
+  afterwards with `SetTimer`. That is backwards: starting a session with a
+  timer is the common path, so the field existed and was right in the case a
+  client least needed it. `mode`, `cycles`, `unbounded` and `total` were
+  correct on both paths, which is what made it easy to miss.
 - **`SetTimer` did not emit a change for the `Timer` property**, so a client
   with a caching proxy — zbus's default — set a timer and read back the value
   from before its own call. Found by a contract test written for the additions

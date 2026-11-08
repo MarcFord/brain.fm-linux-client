@@ -114,7 +114,7 @@ check-scripts:
 	@# "absent" instead, so presence is tested separately from the result.
 	@if command -v shellcheck >/dev/null 2>&1; then \
 	   shellcheck -s sh install.sh dist/smoke-install.sh dist/smoke-layer.sh \
-	     dist/ci-assert-test.sh dist/changelog-section.sh \
+	     dist/smoke-watch.sh dist/ci-assert-test.sh dist/changelog-section.sh \
 	   && shellcheck dist/ci-assert.sh \
 	   && echo "ok: shellcheck clean"; \
 	 else \
@@ -175,13 +175,18 @@ smoke-layer:
 	@BFM_GTK_BIN=$(TARGETDIR)/bfm-gtk ./dist/smoke-layer.sh; \
 	  rc=$$?; [ $$rc -eq 77 ] && echo "(skipped)" && exit 0; exit $$rc
 
+## smoke-watch: prove `bfm status --watch` tracks the daemon coming and going
+smoke-watch:
+	@BFM_BIN_DIR=$(TARGETDIR) ./dist/smoke-watch.sh; \
+	  rc=$$?; [ $$rc -eq 77 ] && echo "(skipped)" && exit 0; exit $$rc
+
 ## smoke-install: prove `make install` yields a tree that D-Bus can activate
 smoke-install:
 	@./dist/smoke-install.sh; rc=$$?; \
 	  [ $$rc -eq 77 ] && echo "(skipped)" && exit 0; exit $$rc
 
 ## smoke: every smoke check
-smoke: smoke-install smoke-layer
+smoke: smoke-install smoke-watch smoke-layer
 
 ## package: build .deb and .rpm packages (needs nfpm)
 PKGVERSION ?= $(shell sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)

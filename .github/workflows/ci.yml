@@ -82,7 +82,7 @@ jobs:
           # not, so a clean local run is not proof of a clean CI run.
           shellcheck --version
           shellcheck -s sh install.sh dist/smoke-install.sh dist/smoke-layer.sh \
-            dist/ci-assert-test.sh dist/changelog-section.sh
+            dist/smoke-watch.sh dist/ci-assert-test.sh dist/changelog-section.sh
           # Sourced, so it carries its own `shellcheck shell=sh` directive.
           shellcheck dist/ci-assert.sh
       - name: POSIX sh parse

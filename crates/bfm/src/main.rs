@@ -380,11 +380,64 @@ async fn status(
         .build()
         .await?;
 
-    let mut changes = props.receive_properties_changed().await?;
-    while changes.next().await.is_some() {
-        print_status(bfm, json, true).await?;
+    let mut prop_changes = props.receive_properties_changed().await?;
+
+    // Watching property changes alone leaves a watcher silently wrong in both
+    // directions, because a daemon that is not running emits nothing:
+    //
+    //   * Started with no daemon, it printed one `unavailable` and then stayed
+    //     silent forever. Since it never exits, nothing retried it.
+    //   * If the daemon died mid-stream it printed nothing at all, so a bar
+    //     went on showing `playing` indefinitely for a daemon that was gone.
+    //
+    // NameOwnerChanged is the missing signal: it fires when the daemon takes
+    // the bus name and when it drops it, including a crash.
+    let dbus = zbus::fdo::DBusProxy::new(conn).await?;
+    let mut owner_changes = dbus.receive_name_owner_changed().await?;
+
+    loop {
+        tokio::select! {
+            change = prop_changes.next() => {
+                if change.is_none() { break; }
+                print_status(bfm, json, true).await?;
+            }
+            signal = owner_changes.next() => {
+                let Some(signal) = signal else { break };
+                let args = signal.args()?;
+                if args.name.as_str() != bfm_proto::BUS_NAME {
+                    continue;
+                }
+                if args.new_owner.is_some() {
+                    // Back. Reading properties is safe here: the daemon
+                    // already owns the name, so this cannot activate anything.
+                    print_status(bfm, json, true).await?;
+                } else {
+                    // Gone. Deliberately does *not* read a property. The name
+                    // is D-Bus activatable, so a read would start a fresh
+                    // daemon merely because something was watching — a status
+                    // bar must not resurrect the service it is reporting on.
+                    print_unavailable(json);
+                }
+            }
+        }
     }
     Ok(())
+}
+
+/// The one place the "no daemon" line is defined, so the stream and the
+/// one-shot path cannot describe an outage differently.
+fn print_unavailable(json: bool) {
+    if json {
+        let obj = serde_json::json!({
+            "text": "unavailable",
+            "alt": "unavailable",
+            "tooltip": "no bfm daemon on the session bus",
+            "class": "unavailable",
+        });
+        println!("{obj}");
+    } else {
+        println!("unavailable");
+    }
 }
 
 /// `render_down` decides whether an absent daemon is written to stdout at
@@ -393,17 +446,7 @@ async fn status(
 async fn print_status(bfm: &BrainFM1Proxy<'_>, json: bool, render_down: bool) -> Result<Reach> {
     if let Err(e) = bfm.interface_version().await {
         if render_down {
-            if json {
-                let obj = serde_json::json!({
-                    "text": "unavailable",
-                    "alt": "unavailable",
-                    "tooltip": "no bfm daemon on the session bus",
-                    "class": "unavailable",
-                });
-                println!("{obj}");
-            } else {
-                println!("unavailable");
-            }
+            print_unavailable(json);
         }
         return Ok(Reach::Down(e));
     }

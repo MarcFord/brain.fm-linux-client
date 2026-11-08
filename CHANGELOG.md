@@ -23,6 +23,15 @@ entry here.
 
 ### Fixed
 
+- `bfm status --watch` did not notice the daemon appearing or disappearing, so
+  a status bar built on it was silently wrong in both directions: a watcher
+  started with no daemon printed one `unavailable` and then stayed silent
+  forever even once a daemon came up, and a watcher whose daemon died
+  mid-stream printed nothing at all, leaving a bar showing `playing`
+  indefinitely for a daemon that was gone. It now follows
+  `NameOwnerChanged`, emitting `unavailable` when the name is lost and a fresh
+  state line when it returns. Reported from a real bar widget built on this
+  stream.
 - The Flatpak build never ran. It referenced
   `bilelmoussaoui/flatpak-github-actions:kde-6.8`, a Docker Hub tag that does
   not exist — that repository stops at `kde-6.7` — so the job failed on the
@@ -55,6 +64,10 @@ entry here.
 - The full suite runs on pull requests into `main` and `testing`, which is
   what lets it be a *required* check there. Both branches are now protected
   and require all seventeen of its jobs.
+- `make smoke-watch`, which moves a real daemon underneath a live watcher in
+  both directions. The watch bugs above were invisible to unit tests because
+  they are failures of silence, and only observable by starting and killing a
+  daemon under a running watcher.
 
 ## [0.1.0] — 2026-11-07
 

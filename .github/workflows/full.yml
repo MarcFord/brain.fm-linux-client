@@ -122,11 +122,14 @@ jobs:
       - name: make smoke
         run: make smoke GUI=none | tee /tmp/smoke.txt
 
-      - name: The install smoke check must have really run, not skipped
+      - name: The smoke checks that can run here must have really run
         run: |
           . dist/ci-assert.sh
           assert_contains 'ok: installed tree activates on demand' /tmp/smoke.txt \
             "smoke-install skipped; a skip is not a pass"
+          # Only smoke-layer may legitimately skip here; it needs a compositor.
+          assert_contains 'ok: the watch stream tracks the daemon' /tmp/smoke.txt \
+            "smoke-watch skipped; a skip is not a pass"
 
   # `make install` is what distro packaging and install.sh both call, so each
   # GUI selection gets a staged install and its layout asserted. Runs in the

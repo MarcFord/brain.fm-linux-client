@@ -21,7 +21,15 @@ entry here.
 
 ## [Unreleased]
 
-Nothing yet.
+### Documentation
+
+- How to gate on `bfm capabilities` safely: the probe is a subprocess, so its
+  answer is asynchronous and anything event-driven fires first. Default to
+  "the guarantee is absent" and let the probe turn a fallback off, never the
+  reverse. Reported from the Omarchy plugin, where both MPRIS edges arrive
+  before the probe answers — the safe direction, but a client gated the other
+  way round would trust a guarantee it had not yet received, in a window that
+  is usually empty at startup and so survives testing.
 
 ## [0.1.2] — 2026-11-07
 

@@ -387,6 +387,19 @@ feature list-session-lengths
 | `watch-follows-daemon` | `status --watch` emits `unavailable` when the daemon goes away and a fresh state line when it returns, so the stream alone is enough for liveness |
 | `list-session-lengths` | `list session-lengths` exists, so a client need not invent durations (the daemon must also serve interface 2 or newer) |
 
+### Gate conservatively
+
+The probe is a subprocess, so the answer arrives asynchronously. Anything that
+reacts faster than it — a signal, a bus event, a model your toolkit already
+maintains — fires while the gate is still unset.
+
+So default to "the guarantee is absent" and let the probe turn a fallback
+*off*, never the other way round. Gated the other way, a client has a window
+in which it trusts a guarantee it has not yet received. At startup there is
+usually nothing to do in that window, which is exactly why the mistake
+survives testing.
+
+
 ---
 
 ## Writing your own client

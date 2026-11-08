@@ -155,6 +155,10 @@ async fn main() -> Result<()> {
         Command::Stop => bfm.stop_session().await?,
 
         Command::Timer { spec } => {
+            // An empty or blank argument clears the timer, same as passing
+            // none. Reporting "timer set: " for it described the opposite of
+            // what happened.
+            let spec = spec.filter(|s| !s.trim().is_empty());
             bfm.set_timer(spec.as_deref().unwrap_or("")).await?;
             match spec {
                 Some(s) => println!("timer set: {s}"),

@@ -395,14 +395,24 @@ impl BrainFm {
     ///
     /// Works without a session: a timer is useful on its own, and keeping it
     /// independent lets a plugin drive one without touching playback.
-    async fn set_timer(&mut self, spec: &str) -> zbus::fdo::Result<()> {
+    /// Emits a change for the `Timer` property, which it previously did not.
+    /// zbus proxies cache properties by default, so a client that set a timer
+    /// and read it back saw the value from before its own call -- stale until
+    /// something unrelated, like starting a session, happened to notify.
+    async fn set_timer(
+        &mut self,
+        spec: &str,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+    ) -> zbus::fdo::Result<()> {
         if spec.trim().is_empty() {
             self.timer = None;
+            let _ = self.timer_changed(&emitter).await;
             return Ok(());
         }
         let parsed =
             TimerSpec::parse(spec).map_err(|e| zbus::fdo::Error::InvalidArgs(e.to_string()))?;
-        self.timer = Some(Timer::start(parsed));
+        self.timer = Some(Timer::start_with_text(parsed, spec.trim().to_owned()));
+        let _ = self.timer_changed(&emitter).await;
         Ok(())
     }
 
@@ -633,6 +643,27 @@ impl BrainFm {
         put(
             "total",
             Variant::from(self.timer.as_ref().map_or(0, |t| t.total().as_secs())),
+        );
+        // Added at interface version 6. Without these a client cannot tell a
+        // countdown from a one-cycle interval -- both report `cycles=1,
+        // phase="work"` -- so it cannot restore what the user chose, and an
+        // endless interval is indistinguishable from a broken one.
+        put(
+            "mode",
+            Variant::from(
+                self.timer
+                    .as_ref()
+                    .map_or("none", |t| t.mode().as_str())
+                    .to_owned(),
+            ),
+        );
+        put(
+            "spec",
+            Variant::from(self.timer.as_ref().map_or("", |t| t.text()).to_owned()),
+        );
+        put(
+            "unbounded",
+            Variant::from(self.timer.as_ref().is_some_and(|t| t.is_unbounded())),
         );
         m
     }

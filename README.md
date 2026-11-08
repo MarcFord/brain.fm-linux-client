@@ -232,7 +232,9 @@ bfm whoami / logout
 ```
 
 Timers come in three shapes: **infinite** (the default), a **countdown**
-(`50m`), or **intervals** (`25m/5m x4`). A finished timer ends the session.
+(`50m`), or **intervals** (`25m/5m x4`, or `25m/5m x*` to cycle until you
+stop). A finished timer ends the session. Units are `h`, `m`, `s` in any case
+and compound freely, so `1h30m` and `7H` both work.
 
 ---
 

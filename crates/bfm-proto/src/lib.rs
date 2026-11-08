@@ -34,7 +34,7 @@ pub const INTERFACE: &str = "dev.marcford.BrainFM1";
 ///   clients simply ignore them.
 /// * 4 — added `Favorite` and `Dislike`; `Track` gained `is_favorite`.
 /// * 5 — added `Undislike`, so a mis-tapped thumbs-down is not permanent.
-pub const INTERFACE_VERSION: u32 = 5;
+pub const INTERFACE_VERSION: u32 = 6;
 
 /// MPRIS bus name, for `playerctl -p bfm` and media keys.
 pub const MPRIS_BUS_NAME: &str = "org.mpris.MediaPlayer2.bfm";
@@ -245,6 +245,14 @@ pub trait BrainFM1 {
     fn position(&self) -> zbus::Result<u64>;
 
     /// Timer state: `phase`, `remaining`, `cycle`, `cycles`.
+    /// `{cycle, cycles, phase, remaining, total}`, plus, since interface
+    /// version 6, `{mode, spec, unbounded}`.
+    ///
+    /// `mode` is `none` | `countdown` | `intervals`. Read it rather than
+    /// inferring from `cycles`: a countdown and a single-cycle interval both
+    /// report `cycles=1, phase="work"`, and `cycles=0` means either "no timer"
+    /// or "endless" depending on `unbounded`. `spec` is the string the client
+    /// set, so a front-end can restore the user's choice after a restart.
     #[zbus(property)]
     fn timer(&self) -> zbus::Result<std::collections::HashMap<String, zbus::OwnedVariant>>;
 

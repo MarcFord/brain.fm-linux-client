@@ -466,3 +466,68 @@ async fn an_empty_track_id_with_nothing_playing_is_refused() {
         "expected a clear 'no track is playing', got: {err}"
     );
 }
+
+/// Version 6 added `mode`, `spec` and `unbounded` to the `Timer` property.
+///
+/// A countdown and a single-cycle interval are otherwise identical on the
+/// wire -- both `cycles=1, phase="work"` -- so a client could not restore what
+/// the user chose, and an endless interval could not be expressed at all.
+#[tokio::test]
+async fn timer_mode_is_readable_at_interface_version_6() {
+    let (conn, name) = bus_or_skip!("timer-mode");
+    let p = proxy(&conn, &name).await;
+
+    assert!(p.interface_version().await.unwrap() >= 6);
+
+    // No timer set.
+    p.set_timer("").await.unwrap();
+    assert_eq!(
+        String::try_from(p.timer().await.unwrap()["mode"].clone()).unwrap(),
+        "none",
+        "with no timer, mode must say so rather than leaving it to be inferred"
+    );
+
+    // A countdown and a one-cycle interval must not look the same.
+    p.set_timer("50m").await.unwrap();
+    let countdown = p.timer().await.unwrap();
+    p.set_timer("25m/5m x1").await.unwrap();
+    let interval = p.timer().await.unwrap();
+
+    assert_eq!(
+        u32::try_from(countdown["cycles"].clone()).unwrap(),
+        u32::try_from(interval["cycles"].clone()).unwrap(),
+        "this test is pointless unless cycles really is identical"
+    );
+    assert_eq!(
+        String::try_from(countdown["mode"].clone()).unwrap(),
+        "countdown"
+    );
+    assert_eq!(
+        String::try_from(interval["mode"].clone()).unwrap(),
+        "intervals"
+    );
+
+    // The spec comes back as set, so a front-end can restore it.
+    assert_eq!(
+        String::try_from(interval["spec"].clone()).unwrap(),
+        "25m/5m x1"
+    );
+
+    // Endless intervals: expressible, and flagged rather than inferred from a
+    // zero cycle count.
+    p.set_timer("25m/5m x*").await.unwrap();
+    let endless = p.timer().await.unwrap();
+    assert!(
+        bool::try_from(endless["unbounded"].clone()).unwrap(),
+        "an endless spec must report unbounded"
+    );
+    assert_eq!(
+        String::try_from(endless["mode"].clone()).unwrap(),
+        "intervals"
+    );
+    assert_eq!(
+        u64::try_from(endless["total"].clone()).unwrap(),
+        0,
+        "an endless timer has no total"
+    );
+}

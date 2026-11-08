@@ -21,8 +21,35 @@ entry here.
 
 ## [Unreleased]
 
+### Added
+
+- **Endless intervals.** `"25m/5m x*"` (or `xinf`) cycles work and break until
+  stopped, matching what the web player's intervals mode actually does. There
+  was previously no spec for it at all: a missing count means exactly one
+  cycle, and `x0` was rejected, so a client could only approximate continuous
+  cycling with an absurd count like `x99`. A missing count still means one
+  cycle — changing that would silently alter what existing clients get from a
+  spec they already send.
+- **The `Timer` property now reports `mode`, `spec` and `unbounded`**
+  (interface version **6**). A countdown and a single-cycle interval were
+  indistinguishable — both `cycles=1, phase="work"` — so a client could not
+  restore what the user had chosen and had to keep its own shadow copy, which
+  went wrong after a restart. `spec` returns the string as set. Reported by a
+  bar widget that hit exactly that.
+- Timer specs now accept units and the cycle marker in any case, so `7H` and
+  `25m/5m X4` work alongside `7h` and `x4`. `7h` is the natural way to write
+  sleep's seven-hour suggestion, and the previous rejection of `7H` was
+  gratuitous.
+
 ### Fixed
 
+- **`SetTimer` did not emit a change for the `Timer` property**, so a client
+  with a caching proxy — zbus's default — set a timer and read back the value
+  from before its own call. Found by a contract test written for the additions
+  above; it failed on its first run for this reason rather than the one it was
+  written for.
+- `bfm timer ""` printed `timer set: ` while actually clearing the timer. An
+  empty or blank argument now reports `timer cleared`, like passing none.
 - `bfm status --watch` did not notice the daemon appearing or disappearing, so
   a status bar built on it was silently wrong in both directions: a watcher
   started with no daemon printed one `unavailable` and then stayed silent

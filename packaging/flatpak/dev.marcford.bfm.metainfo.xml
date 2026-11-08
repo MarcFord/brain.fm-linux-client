@@ -83,6 +83,16 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.1.1" date="2026-11-07">
+      <description>
+        <p>
+          Interface version 6: endless intervals, a readable timer mode, and
+          new timer hooks to script against. The status stream now follows the
+          daemon appearing and disappearing, and the Flatpak builds.
+        </p>
+      </description>
+      <url type="details">https://github.com/MarcFord/brain.fm-linux-client/releases/tag/v0.1.1</url>
+    </release>
     <release version="0.1.0" date="2026-11-07">
       <description>
         <p>

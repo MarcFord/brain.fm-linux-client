@@ -21,6 +21,12 @@ entry here.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.1.1] — 2026-11-07
+
+Serves `BrainFM1` interface version **6**.
+
 ### Added
 
 - **Timer hooks you can script against.** `timer_set` and `timer_cleared` are
@@ -229,5 +235,6 @@ First release. Serves `BrainFM1` interface version 5.
 - Brain.fm's API is private and undocumented. It can change without notice;
   when it does, the fix belongs in `bfm-api` and nowhere else.
 
-[Unreleased]: https://github.com/MarcFord/brain.fm-linux-client/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/MarcFord/brain.fm-linux-client/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/MarcFord/brain.fm-linux-client/releases/tag/v0.1.1
 [0.1.0]: https://github.com/MarcFord/brain.fm-linux-client/releases/tag/v0.1.0

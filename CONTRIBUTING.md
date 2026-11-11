@@ -10,6 +10,10 @@ make smoke      # install and overlay checks against the real system
 Both must pass. `make smoke` skips (exit 77) where it cannot run, so it is
 safe on a headless box.
 
+Found a security problem? Do not open an issue — see [`SECURITY.md`](SECURITY.md)
+for how to report it privately. Everyone here is expected to follow the
+[Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## Three rules that are not negotiable
 
 **No test may touch the live API.** Everything runs against recorded

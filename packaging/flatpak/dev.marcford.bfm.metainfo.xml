@@ -83,6 +83,17 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.1.3" date="2026-11-11">
+      <description>
+        <p>
+          Security fix for browser sign-in: the session is now taken only
+          from Brain.fm's own browser storage, so another website's token can
+          never be sent to Brain.fm. Sessions the browser has already
+          compacted to disk are found too.
+        </p>
+      </description>
+      <url type="details">https://github.com/MarcFord/brain.fm-linux-client/releases/tag/v0.1.3</url>
+    </release>
     <release version="0.1.2" date="2026-11-07">
       <description>
         <p>

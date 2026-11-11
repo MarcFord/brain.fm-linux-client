@@ -21,6 +21,10 @@ entry here.
 
 ## [Unreleased]
 
+## [0.1.3] — 2026-11-11
+
+Serves `BrainFM1` interface version **6**, unchanged from 0.1.2.
+
 ### Security
 
 - **`bfm login --browser` could send another website's token to Brain.fm.**
@@ -298,7 +302,8 @@ First release. Serves `BrainFM1` interface version 5.
 - Brain.fm's API is private and undocumented. It can change without notice;
   when it does, the fix belongs in `bfm-api` and nowhere else.
 
-[Unreleased]: https://github.com/MarcFord/brain.fm-linux-client/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/MarcFord/brain.fm-linux-client/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/MarcFord/brain.fm-linux-client/releases/tag/v0.1.3
 [0.1.2]: https://github.com/MarcFord/brain.fm-linux-client/releases/tag/v0.1.2
 [0.1.1]: https://github.com/MarcFord/brain.fm-linux-client/releases/tag/v0.1.1
 [0.1.0]: https://github.com/MarcFord/brain.fm-linux-client/releases/tag/v0.1.0

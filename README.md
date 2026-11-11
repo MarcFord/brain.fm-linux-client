@@ -360,11 +360,11 @@ number moves when it changes and nothing on the bus reveals it.
 
 ```sh
 $ bfm capabilities --json
-{"version":"0.1.2","interfaceVersion":6,
+{"version":"0.1.3","interfaceVersion":6,
  "features":["status-unavailable-in-band","watch-follows-daemon","list-session-lengths"]}
 
 $ bfm capabilities          # same thing, greppable
-version 0.1.2
+version 0.1.3
 interface 6
 feature status-unavailable-in-band
 feature watch-follows-daemon

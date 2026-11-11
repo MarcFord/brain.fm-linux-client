@@ -64,6 +64,12 @@ Carrying the session back is the awkward step. Two routes, in order:
 1. **Read it from the browser profile.** `bfm` looks through local Chromium-family
    profiles for an existing Brain.fm session and uses it directly, so the user never
    handles the token at all. This is the normal path.
+
+   The read is deliberately narrow. `localStorage` for every site lives in the same
+   LevelDB files, so `bfm` parses the records and only considers values whose key
+   names an `https://…brain.fm` origin. A token is never identified by its shape
+   alone: another site's JWT can carry exactly the claims Brain.fm's does, and
+   taking it would mean presenting one site's credential to another.
 2. **Paste.** When no profile is readable — Firefox, a snap or flatpak browser, a
    custom data directory, or a remote shell — `bfm` says where to find the session and
    reads it from stdin without echoing it. Zero moving parts, works over SSH.

@@ -12,6 +12,7 @@ pub mod browser;
 pub mod client;
 pub mod display;
 pub mod filters;
+mod leveldb;
 pub mod mode;
 pub mod state;
 pub mod steps;

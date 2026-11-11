@@ -21,6 +21,30 @@ entry here.
 
 ## [Unreleased]
 
+### Security
+
+- **`bfm login --browser` could send another website's token to Brain.fm.**
+  The profile read scanned the browser's `localStorage` files for anything
+  JWT-shaped and recognised Brain.fm's session by its claims alone (`_id`,
+  `iat`, `exp`, and no `iss` or `aud`). Nothing about that shape is unique
+  to Brain.fm: a token from any other site the user is signed in to, with
+  the same claims and a newer `iat`, would win the selection and be sent as
+  a bearer token to `api.brain.fm` in the verification request — leaking
+  that site's live credential to a third party, whether or not Brain.fm
+  accepted it.
+
+  The files are now read as the LevelDB records they are, and a token is
+  taken only from a record whose key names an `https://…brain.fm` origin
+  as first-party storage. Another site's token is never a candidate, no
+  matter what its claims look like. The claim check stays, but only to
+  skip the SSO provider's id token that Brain.fm's own web app stores next
+  to the session.
+
+  A consequence worth having: a session that Chrome has already compacted
+  out of the write-ahead log is now found too. Those tables are Snappy
+  compressed, which a byte scan could never see into, so the old read only
+  worked for a recent login.
+
 ### Documentation
 
 - How to gate on `bfm capabilities` safely: the probe is a subprocess, so its

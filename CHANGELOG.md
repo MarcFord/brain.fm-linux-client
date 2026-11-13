@@ -21,6 +21,8 @@ entry here.
 
 ## [Unreleased]
 
+Nothing yet.
+
 ## [0.1.3] — 2026-11-11
 
 Serves `BrainFM1` interface version **6**, unchanged from 0.1.2.

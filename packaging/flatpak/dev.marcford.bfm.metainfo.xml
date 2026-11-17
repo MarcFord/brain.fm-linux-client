@@ -83,6 +83,17 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.1.4" date="2026-11-17">
+      <description>
+        <p>
+          Security fix for sign-out: logging out now refuses, and says why,
+          when the session is in a system keyring the daemon cannot currently
+          reach, instead of reporting success while the session remains and
+          would be restored on the next start.
+        </p>
+      </description>
+      <url type="details">https://github.com/MarcFord/brain.fm-linux-client/releases/tag/v0.1.4</url>
+    </release>
     <release version="0.1.3" date="2026-11-11">
       <description>
         <p>

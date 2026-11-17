@@ -21,6 +21,12 @@ entry here.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.1.4] — 2026-11-17
+
+Serves `BrainFM1` interface version **6**, unchanged from 0.1.3.
+
 ### Security
 
 - **`bfm logout` could print "signed out" while the session stayed in the
@@ -327,7 +333,8 @@ First release. Serves `BrainFM1` interface version 5.
 - Brain.fm's API is private and undocumented. It can change without notice;
   when it does, the fix belongs in `bfm-api` and nowhere else.
 
-[Unreleased]: https://github.com/MarcFord/brain.fm-linux-client/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/MarcFord/brain.fm-linux-client/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/MarcFord/brain.fm-linux-client/releases/tag/v0.1.4
 [0.1.3]: https://github.com/MarcFord/brain.fm-linux-client/releases/tag/v0.1.3
 [0.1.2]: https://github.com/MarcFord/brain.fm-linux-client/releases/tag/v0.1.2
 [0.1.1]: https://github.com/MarcFord/brain.fm-linux-client/releases/tag/v0.1.1

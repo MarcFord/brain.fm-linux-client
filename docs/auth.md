@@ -99,9 +99,12 @@ the prompting removed.
 
 ## Storage
 
-- Only the **session token** is persisted, in the system keyring via Secret Service
-  (`keyring` crate), falling back to a `0600` file in `0700` directories on hosts with
-  no keyring daemon.
+- Only the **session token** is persisted, in the system keyring via Secret Service,
+  falling back to a `0600` file in `0700` directories on hosts with no keyring daemon.
+- The daemon keeps a marker beside the fallback file recording whether a session was
+  ever placed in the keyring. `bfm logout` uses it to refuse, rather than report
+  success, when the keyring holds a session it cannot currently reach; a host that
+  never had a keyring is not affected.
 - The **password is never persisted** under any method — lazy renewal means we never
   need it again after the initial exchange.
 - The daemon replaces the stored token every time a response carries a rotated one.

@@ -21,7 +21,30 @@ entry here.
 
 ## [Unreleased]
 
-Nothing yet.
+### Security
+
+- **`bfm logout` could print "signed out" while the session stayed in the
+  keyring.** The daemon reached Secret Service through the `keyring` crate's
+  compatibility layer, which remembers the first connection attempt for the
+  life of the process — failure included. A daemon that started before the
+  keyring was ready therefore never reached it again, and a later logout
+  found "no entry", called that a successful deletion, and left the real
+  token in place. The next daemon start, with the keyring up, restored it,
+  and the account was usable again after a sign-out the user had been told
+  succeeded.
+
+  Three changes. The daemon now talks to Secret Service directly and forgets
+  a failed connection rather than caching it, so it recovers when the
+  keyring does. A keyring that cannot be reached is now a distinct outcome
+  from one that answers "nothing here", and only the latter counts as
+  cleared. And the daemon records, in a marker file beside the fallback
+  token file, whether a session was ever placed in the keyring: a logout
+  that cannot reach a keyring holding a session fails and says so, while a
+  host that never had a keyring is not nagged about one. A successful
+  keyring save also removes any older token left in the fallback file.
+
+  Rated low by the reporter: it needs a keyring that was unavailable when
+  the daemon started and available later.
 
 ## [0.1.3] — 2026-11-11
 
